@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
+using BlogGenerator.ShortCodes;
 using Statiq.App;
 using Statiq.Web;
 
@@ -10,6 +11,7 @@ namespace BlogGenerator
       await Bootstrapper
         .Factory
         .CreateWeb(args)
+        .AddShortcode<AmazonAffiliateShortCodes>("AmazonAffiliate")
         .RunAsync();
   }
 }
