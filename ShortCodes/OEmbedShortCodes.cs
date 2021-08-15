@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -92,13 +92,15 @@ namespace BlogGenerator.ShortCodes
                 foreach (var data in providerData)
                 {
                     foreach (var endPoint in data.EndPoints.Where(endPoint =>
-                        endPoint.Schemes.Select(regexUrl => regexUrl.Replace("*", @"\w+"))
+                        endPoint.Schemes.Select(regexUrl => regexUrl.Replace("*", @".*"))
                             .Any(r => Regex.IsMatch(url, r))))
                     {
                         oembedEndPointUrl = endPoint.Url;
                     }
                 }
 
+                if (!string.IsNullOrEmpty(oembedEndPointUrl))
+                {
                     try
                     {
                         return await GetEmbedResultAsync(arguments, oembedEndPointUrl, url, query, context);
@@ -108,6 +110,7 @@ namespace BlogGenerator.ShortCodes
                         return result;
                     }
                 }
+            }
 
             {
                 var (isSuccess, content) = await GetWebsiteContentAsync(context, url);
@@ -210,9 +213,10 @@ namespace BlogGenerator.ShortCodes
                             {
                                 var providerName = oEmbedProviderJson.ProviderName;
 
-                            var list = oEmbedProviderJson.EndPoints.SelectMany(r => r.Schemes).Select(url => url.Replace("*", @"\w+")).ToList();
+                                var list = oEmbedProviderJson.EndPoints.SelectMany(r => r.Schemes)
+                                    .Select(url => url.Replace("*", @".*")).ToList();
 
-                            list.Add($"{oEmbedProviderJson.ProviderUrl}\\w+");
+                                list.Add($"{oEmbedProviderJson.ProviderUrl}.*");
 
                                 _oembedProviderDic.Add(providerName, list);
                             }
