@@ -72,14 +72,12 @@ namespace BlogGenerator.ShortCodes
                 query.Add("omit_script=true");
             }
 
-
             var existProviderName = "";
 
             foreach (var dic in _oembedProviderDic.Where(dic => dic.Value.Select(pattern => Regex.IsMatch(url, pattern)).Any(isMatch => isMatch)))
             {
                 existProviderName = dic.Key;
             }
-
 
             if (!string.IsNullOrEmpty(existProviderName))
             {
@@ -113,12 +111,17 @@ namespace BlogGenerator.ShortCodes
             }
 
             {
-                var (isSuccess, content) = await GetWebsiteContentAsync(context, url);
-
-                if (!isSuccess)
+                var content = string.Empty;
                 {
-                    //取得できなかったのでURLをそのままリンクとして表示
-                    return result;
+                    var (isSuccess, contentHtml) = await GetWebsiteContentAsync(context, url);
+
+                    if (!isSuccess)
+                    {
+                        //取得できなかったのでURLをそのままリンクとして表示
+                        return result;
+                    }
+
+                    content = contentHtml;
                 }
 
                 try
@@ -141,11 +144,11 @@ namespace BlogGenerator.ShortCodes
 
                     if (!string.IsNullOrEmpty(json.oembedJson))
                     {
-                        var a = await GetWebsiteContentAsync(context, json.oembedJson);
+                        var (isSuccess, jsonContent) = await GetWebsiteContentAsync(context, json.oembedJson);
 
-                        if (a.IsSuccess)
+                        if (isSuccess)
                         {
-                            var jsonData = JsonSerializer.Deserialize<ProviderResponse>(a.content);
+                            var jsonData = JsonSerializer.Deserialize<ProviderResponse>(jsonContent);
 
                             switch (jsonData.Type)
                             {
@@ -172,10 +175,7 @@ namespace BlogGenerator.ShortCodes
                     //HTMLパースに失敗したらURLをそのままリンクとして表示
                     return result;
                 }
-
             }
-
-
 
             return result;
         }
