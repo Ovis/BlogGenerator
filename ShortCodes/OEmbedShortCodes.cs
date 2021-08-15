@@ -13,6 +13,10 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Statiq.Common;
 using Statiq.Web.Shortcodes;
+using System.IO;
+using System.Xml.Linq;
+using System.Xml;
+using System.Xml.Serialization;
 
 namespace BlogGenerator.ShortCodes
 {
@@ -37,10 +41,7 @@ namespace BlogGenerator.ShortCodes
         {
             await Initialize(context);
 
-
-            ShortcodeResult result = new ShortcodeResult("");
-
-            IMetadataDictionary arguments = args.ToDictionary(
+            var arguments = args.ToDictionary(
                 TargetUrl,
                 HideMedia,
                 HideThread,
@@ -48,13 +49,25 @@ namespace BlogGenerator.ShortCodes
                 OmitScript);
             arguments.RequireKeys(TargetUrl);
 
-            List<string> query = new List<string>();
+            var url = arguments.GetString(TargetUrl);
+
+            var defaultLink = new StringBuilder()
+                .Append($"<p>")
+                .Append($"<a href=\"")
+                .Append($"{url}")
+                .Append($"\" target=\"_blank\">")
+                .Append($"{url}")
+                .Append($"</a>")
+                .Append($"</p>");
+
+            var result = new ShortcodeResult(defaultLink.ToString());
+
+            var query = new List<string>();
             if (_omitScript || arguments.GetBool(OmitScript))
             {
                 query.Add("omit_script=true");
             }
 
-            var url = arguments.GetString(TargetUrl);
 
             var existProviderName = "";
 
@@ -66,10 +79,11 @@ namespace BlogGenerator.ShortCodes
 
             if (!string.IsNullOrEmpty(existProviderName))
             {
+                //oEmbedプロバイダに存在する
+
                 var oembedEndPointUrl = string.Empty;
 
                 var providerData = _jsonData.Where(r => r.ProviderName == existProviderName);
-
 
                 foreach (var data in providerData)
                 {
@@ -87,18 +101,74 @@ namespace BlogGenerator.ShortCodes
                 }
                 catch
                 {
-                    var stringBuilder = new StringBuilder()
-                        .Append($"<p>")
-                        .Append($"<a href=\"")
-                        .Append($"{url}")
-                        .Append($"\" target=\"_blank\">")
-                        .Append($"{url}")
-                        .Append($"</a>")
-                        .Append($"</p>");
-
-                    return new ShortcodeResult(stringBuilder.ToString());
+                    return result;
                 }
             }
+
+            {
+                var (isSuccess, content) = await GetWebsiteContentAsync(context, url);
+
+                if (!isSuccess)
+                {
+                    //取得できなかったのでURLをそのままリンクとして表示
+                    return result;
+                }
+
+                try
+                {
+                    var parser = new AngleSharp.Html.Parser.HtmlParser();
+                    var parseDoc = parser.ParseDocument(content);
+
+                    var json = new
+                    {
+                        url,
+                        title = parseDoc.QuerySelector("title")?.TextContent,
+                        ogTitle = parseDoc.QuerySelector("meta[property='og:title']")?.GetAttribute("content"),
+                        ogImage = parseDoc.QuerySelector("meta[property='og:image']")?.GetAttribute("content"),
+                        ogDescription = parseDoc.QuerySelector("meta[property='og:description']")?.GetAttribute("content"),
+                        ogType = parseDoc.QuerySelector("meta[property='og:type']")?.GetAttribute("content"),
+                        ogUrl = parseDoc.QuerySelector("meta[property='og:url']")?.GetAttribute("content"),
+                        ogSiteName = parseDoc.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content"),
+                        oembedJson = parseDoc.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href")
+                    };
+
+                    if (!string.IsNullOrEmpty(json.oembedJson))
+                    {
+                        var a = await GetWebsiteContentAsync(context, json.oembedJson);
+
+                        if (a.IsSuccess)
+                        {
+                            var jsonData = JsonSerializer.Deserialize<ProviderResponse>(a.content);
+
+                            switch (jsonData.Type)
+                            {
+                                case "link":
+                                    break;
+
+                                case "photo":
+                                    break;
+
+                                case "video":
+                                case "rich":
+                                    return new ShortcodeResult(jsonData.Html);
+
+                                default:
+                                    break;
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+
+                    //HTMLパースに失敗したらURLをそのままリンクとして表示
+                    return result;
+                }
+
+            }
+
+
 
             return result;
         }
@@ -112,37 +182,26 @@ namespace BlogGenerator.ShortCodes
 
             try
             {
-                using var httpClient = context.CreateHttpClient();
-                httpClient.DefaultRequestHeaders.Add("User-Agent", "Statiq");
+                var (isSuccess, content) = await GetWebsiteContentAsync(context, "https://oembed.com/providers.json");
 
-                var response = await httpClient.GetAsync("https://oembed.com/providers.json");
-                if (response.StatusCode == HttpStatusCode.Redirect ||
-                    response.StatusCode == HttpStatusCode.MovedPermanently)
+                if (isSuccess)
                 {
-                    context.LogWarning($"Attempting to follow redirect for oEmbed Provider Json");
-                    var url = response.Headers.Location?.OriginalString;
-                    response = await httpClient.GetAsync(url);
-                }
+                    var jsonData = JsonSerializer.Deserialize<List<OEmbedProviderJson>>(content);
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    return;
-                }
-                var jsonData = JsonSerializer.Deserialize<List<OEmbedProviderJson>>(await response.Content.ReadAsStringAsync());
-
-                if (jsonData != null)
-                {
-                    _jsonData = jsonData;
-
-                    foreach (var oEmbedProviderJson in jsonData)
+                    if (jsonData != null)
                     {
-                        var providerName = oEmbedProviderJson.ProviderName;
+                        _jsonData = jsonData;
 
-                        var list = oEmbedProviderJson.EndPoints.SelectMany(r => r.Schemes).Select(url => url.Replace("*", @"\w+")).ToList();
+                        foreach (var oEmbedProviderJson in jsonData)
+                        {
+                            var providerName = oEmbedProviderJson.ProviderName;
 
-                        list.Add($"{oEmbedProviderJson.ProviderUrl}\\w+");
+                            var list = oEmbedProviderJson.EndPoints.SelectMany(r => r.Schemes).Select(url => url.Replace("*", @"\w+")).ToList();
 
-                        _oembedProviderDic.Add(providerName, list);
+                            list.Add($"{oEmbedProviderJson.ProviderUrl}\\w+");
+
+                            _oembedProviderDic.Add(providerName, list);
+                        }
                     }
                 }
             }
@@ -150,6 +209,38 @@ namespace BlogGenerator.ShortCodes
             {
                 context.LogWarning($"Error getting feed for{ex.Message}");
             }
+        }
+
+
+
+        /// <summary>
+        /// 指定されたURLのコンテンツを取得して文字列型で返す
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="url"></param>
+        /// <returns></returns>
+        private async Task<(bool IsSuccess, string content)> GetWebsiteContentAsync(IExecutionContext context, string url)
+        {
+            using var httpClient = context.CreateHttpClient();
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Statiq");
+
+            var response = await httpClient.GetAsync(url);
+            if (response.StatusCode == HttpStatusCode.Redirect ||
+                response.StatusCode == HttpStatusCode.MovedPermanently)
+            {
+                context.LogWarning($"Attempting to follow redirect for oEmbed Provider Json");
+                url = response.Headers.Location?.OriginalString;
+                response = await httpClient.GetAsync(url);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+
+                return (true, content);
+            }
+
+            return (false, null);
         }
     }
 }
