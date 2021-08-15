@@ -39,20 +39,20 @@ namespace BlogGenerator.ShortCodes.Models
         public string ThumbnailUrl { get; set; }
         [JsonPropertyName("thumbnail_height")]
         [XmlElement("thumbnail_height")]
-        public int ThumbnailHeight { get; set; }
+        public string ThumbnailHeight { get; set; }
         [JsonPropertyName("thumbnail_width")]
         [XmlElement("thumbnail_width")]
-        public int ThumbnailWidth { get; set; }
+        public string ThumbnailWidth { get; set; }
 
         [JsonPropertyName("url")]
         [XmlElement("url")]
         public string Url { get; set; }
         [JsonPropertyName("height")]
         [XmlElement("height")]
-        public int Height { get; set; }
+        public string Height { get; set; }
         [JsonPropertyName("width")]
         [XmlElement("width")]
-        public int Width { get; set; }
+        public string Width { get; set; }
 
         [JsonPropertyName("html")]
         [XmlElement("html")]
