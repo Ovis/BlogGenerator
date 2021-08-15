@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -17,6 +17,8 @@ using System.IO;
 using System.Xml.Linq;
 using System.Xml;
 using System.Xml.Serialization;
+using System.Threading;
+using Spectre.Console;
 
 namespace BlogGenerator.ShortCodes
 {
@@ -30,6 +32,8 @@ namespace BlogGenerator.ShortCodes
         private const string OmitScript = nameof(OmitScript);
 
         private static volatile bool _initialized;
+
+        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
         private bool _omitScript;
 
@@ -95,15 +99,15 @@ namespace BlogGenerator.ShortCodes
                     }
                 }
 
-                try
-                {
-                    return await GetEmbedResultAsync(arguments, oembedEndPointUrl, url, query, context);
+                    try
+                    {
+                        return await GetEmbedResultAsync(arguments, oembedEndPointUrl, url, query, context);
+                    }
+                    catch
+                    {
+                        return result;
+                    }
                 }
-                catch
-                {
-                    return result;
-                }
-            }
 
             {
                 var (isSuccess, content) = await GetWebsiteContentAsync(context, url);
@@ -176,41 +180,56 @@ namespace BlogGenerator.ShortCodes
         private async Task Initialize(IExecutionContext context)
         {
             if (_initialized)
+            {
                 return;
+            }
 
-            _initialized = true;
+            await _semaphore.WaitAsync();
 
             try
             {
-                var (isSuccess, content) = await GetWebsiteContentAsync(context, "https://oembed.com/providers.json");
-
-                if (isSuccess)
+                if (_initialized)
                 {
-                    var jsonData = JsonSerializer.Deserialize<List<OEmbedProviderJson>>(content);
+                    return;
+                }
 
-                    if (jsonData != null)
+                try
+                {
+                    var (isSuccess, content) =
+                        await GetWebsiteContentAsync(context, "https://oembed.com/providers.json");
+
+                    if (isSuccess)
                     {
-                        _jsonData = jsonData;
+                        var jsonData = JsonSerializer.Deserialize<List<OEmbedProviderJson>>(content);
 
-                        foreach (var oEmbedProviderJson in jsonData)
+                        if (jsonData != null)
                         {
-                            var providerName = oEmbedProviderJson.ProviderName;
+                            _jsonData = jsonData;
+
+                            foreach (var oEmbedProviderJson in jsonData)
+                            {
+                                var providerName = oEmbedProviderJson.ProviderName;
 
                             var list = oEmbedProviderJson.EndPoints.SelectMany(r => r.Schemes).Select(url => url.Replace("*", @"\w+")).ToList();
 
                             list.Add($"{oEmbedProviderJson.ProviderUrl}\\w+");
 
-                            _oembedProviderDic.Add(providerName, list);
+                                _oembedProviderDic.Add(providerName, list);
+                            }
                         }
                     }
+                    _initialized = true;
+                }
+                catch (Exception ex)
+                {
+                    context.LogWarning($"Error getting feed for{ex.Message}");
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                context.LogWarning($"Error getting feed for{ex.Message}");
+                _semaphore.Release();
             }
         }
-
 
 
         /// <summary>
