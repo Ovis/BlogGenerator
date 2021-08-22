@@ -1,6 +1,6 @@
 ﻿namespace BlogGenerator.ShortCodes.Models
 {
-    public class OgpTagData
+    public class SiteMetaData
     {
         public string Url { get; set; }
 
