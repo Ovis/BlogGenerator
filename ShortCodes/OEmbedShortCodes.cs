@@ -1,24 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Mime;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using BlogGenerator.ShortCodes.Models;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using BlogGenerator.Converters;
+using BlogGenerator.ShortCodes.Models;
+using Hnx8.ReadJEnc;
 using Microsoft.Extensions.Logging;
-using NUnit.Framework;
 using Statiq.Common;
 using Statiq.Web.Shortcodes;
-using System.IO;
-using System.Xml.Linq;
-using System.Xml;
-using System.Xml.Serialization;
-using System.Threading;
-using Spectre.Console;
 
 namespace BlogGenerator.ShortCodes
 {
@@ -26,6 +25,7 @@ namespace BlogGenerator.ShortCodes
     public class OEmbedShortCodes : EmbedShortcode
     {
         private const string TargetUrl = nameof(TargetUrl);
+        private const string EnableDiscovery = nameof(EnableDiscovery);
         private const string HideMedia = nameof(HideMedia);
         private const string HideThread = nameof(HideThread);
         private const string Theme = nameof(Theme);
@@ -33,12 +33,10 @@ namespace BlogGenerator.ShortCodes
 
         private static volatile bool _initialized;
 
-        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
-
-        private bool _omitScript;
+        private static readonly SemaphoreSlim Semaphore = new(1, 1);
 
         private static List<OEmbedProviderJson> _jsonData;
-        private static Dictionary<string, List<string>> _oembedProviderDic = new Dictionary<string, List<string>>();
+        private static readonly Dictionary<string, List<string>> OembedProviderDic = new();
 
 
         public override async Task<ShortcodeResult> ExecuteAsync(KeyValuePair<string, string>[] args, IDocument document, IExecutionContext context)
@@ -55,6 +53,21 @@ namespace BlogGenerator.ShortCodes
 
             var url = arguments.GetString(TargetUrl);
 
+            //GistはoEmbedが提供されていないので直接生成
+            if (url.Contains("gist.github.com"))
+            {
+                var gistEmbed = new StringBuilder()
+                    .Append($"<p>")
+                    .Append($"<script src=\"")
+                    .Append($"{url}.js")
+                    .Append($"\">")
+                    .Append($"</script>")
+                    .Append($"</p>");
+
+                return new ShortcodeResult(gistEmbed.ToString());
+            }
+
+
             var defaultLink = new StringBuilder()
                 .Append($"<p>")
                 .Append($"<a href=\"")
@@ -66,52 +79,57 @@ namespace BlogGenerator.ShortCodes
 
             var result = new ShortcodeResult(defaultLink.ToString());
 
-            var query = new List<string>();
-            if (_omitScript || arguments.GetBool(OmitScript))
-            {
-                query.Add("omit_script=true");
-            }
-
             var existProviderName = "";
 
-            foreach (var dic in _oembedProviderDic.Where(dic => dic.Value.Select(pattern => Regex.IsMatch(url, pattern)).Any(isMatch => isMatch)))
+            //oEmbed Providerリストチェック
             {
-                existProviderName = dic.Key;
-            }
-
-            if (!string.IsNullOrEmpty(existProviderName))
-            {
-                //oEmbedプロバイダに存在する
-
-                var oembedEndPointUrl = string.Empty;
-
-                var providerData = _jsonData.Where(r => r.ProviderName == existProviderName);
-
-                foreach (var data in providerData)
+                foreach (var dic in OembedProviderDic.Where(dic => dic.Value.Select(pattern => Regex.IsMatch(url, pattern)).Any(isMatch => isMatch)))
                 {
-                    foreach (var endPoint in data.EndPoints.Where(endPoint =>
-                        endPoint.Schemes.Select(regexUrl => regexUrl.Replace("*", @".*"))
-                            .Any(r => Regex.IsMatch(url, r))))
-                    {
-                        oembedEndPointUrl = endPoint.Url;
-                    }
+                    existProviderName = dic.Key;
                 }
 
-                if (!string.IsNullOrEmpty(oembedEndPointUrl))
+                if (!string.IsNullOrEmpty(existProviderName))
                 {
-                    try
+                    //oEmbedプロバイダに存在する
+
+                    var oembedEndPointUrl = string.Empty;
+
+                    var providerData = _jsonData.Where(r => r.ProviderName == existProviderName);
+
+                    foreach (var data in providerData)
                     {
-                        return await GetEmbedResultAsync(arguments, oembedEndPointUrl, url, query, context);
+                        foreach (var endPoint in data.EndPoints.Where(endPoint =>
+                            endPoint.Schemes.Select(regexUrl => regexUrl.Replace("*", @".*"))
+                                .Any(r => Regex.IsMatch(url, r))))
+                        {
+                            oembedEndPointUrl = endPoint.Url;
+                        }
                     }
-                    catch
+
+                    if (!string.IsNullOrEmpty(oembedEndPointUrl))
                     {
-                        return result;
+                        try
+                        {
+                            var embedResult = await GetEmbedResultAsync(arguments, oembedEndPointUrl, url, new List<string>(), context);
+
+                            var resultString = new StringBuilder()
+                                .Append($"<p>")
+                                .Append($"{embedResult}")
+                                .Append($"</p>").ToString();
+
+                            return new ShortcodeResult(resultString);
+                        }
+                        catch (Exception e)
+                        {
+                            context.LogError($"Error:{e.Message} Url:{url} EndPoint:{oembedEndPointUrl}");
+                            return result;
+                        }
                     }
                 }
             }
 
             {
-                var content = string.Empty;
+                string content;
                 {
                     var (isSuccess, contentHtml) = await GetWebsiteContentAsync(context, url);
 
@@ -129,54 +147,87 @@ namespace BlogGenerator.ShortCodes
                     var parser = new AngleSharp.Html.Parser.HtmlParser();
                     var parseDoc = parser.ParseDocument(content);
 
-                    var json = new
+                    var ogpData = new OgpTagData
                     {
-                        url,
-                        title = parseDoc.QuerySelector("title")?.TextContent,
-                        ogTitle = parseDoc.QuerySelector("meta[property='og:title']")?.GetAttribute("content"),
-                        ogImage = parseDoc.QuerySelector("meta[property='og:image']")?.GetAttribute("content"),
-                        ogDescription = parseDoc.QuerySelector("meta[property='og:description']")?.GetAttribute("content"),
-                        ogType = parseDoc.QuerySelector("meta[property='og:type']")?.GetAttribute("content"),
-                        ogUrl = parseDoc.QuerySelector("meta[property='og:url']")?.GetAttribute("content"),
-                        ogSiteName = parseDoc.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content"),
-                        oembedJson = parseDoc.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href")
+                        Url = url,
+                        Title = parseDoc.QuerySelector("title")?.TextContent,
+                        OgTitle = parseDoc.QuerySelector("meta[property='og:title']")?.GetAttribute("content"),
+                        OgImage = parseDoc.QuerySelector("meta[property='og:image']")?.GetAttribute("content"),
+                        OgDescription = parseDoc.QuerySelector("meta[property='og:description']")?.GetAttribute("content"),
+                        OgType = parseDoc.QuerySelector("meta[property='og:type']")?.GetAttribute("content"),
+                        OgUrl = parseDoc.QuerySelector("meta[property='og:url']")?.GetAttribute("content"),
+                        OgSiteName = parseDoc.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content"),
+                        OembedJson = parseDoc.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href")
                     };
 
-                    if (!string.IsNullOrEmpty(json.oembedJson))
+                    if (arguments.GetBool(EnableDiscovery))
                     {
-                        var (isSuccess, jsonContent) = await GetWebsiteContentAsync(context, json.oembedJson);
-
-                        if (isSuccess)
+                        if (!string.IsNullOrEmpty(ogpData.OembedJson))
                         {
-                            var jsonData = JsonSerializer.Deserialize<ProviderResponse>(jsonContent);
+                            var (isSuccess, jsonContent) = await GetWebsiteContentAsync(context, ogpData.OembedJson);
 
-                            switch (jsonData.Type)
+                            if (isSuccess)
                             {
-                                case "link":
-                                    break;
+                                var deserializeOptions = new JsonSerializerOptions();
+                                deserializeOptions.Converters.Add(new AutoNumberToStringConverter());
 
-                                case "photo":
-                                    break;
+                                var jsonData = JsonSerializer.Deserialize<ProviderResponse>(jsonContent, deserializeOptions);
 
-                                case "video":
-                                case "rich":
-                                    return new ShortcodeResult(jsonData.Html);
+                                switch (jsonData?.Type)
+                                {
+                                    case "link":
+                                        break;
 
-                                default:
-                                    break;
+                                    case "photo":
+                                        break;
+
+                                    case "video":
+                                    case "rich":
+                                        return new ShortcodeResult(jsonData.Html);
+                                }
                             }
                         }
+                    }
+
+                    if (!string.IsNullOrEmpty(ogpData.OgTitle) && !string.IsNullOrEmpty(ogpData.OgUrl))
+                    {
+                        var ogpRichLinkGenerate = new StringBuilder()
+                            .Append($"<div class=\"bcard-wrapper\">")
+                            .Append($"<span class=\"bcard-header withgfav\">")
+                            .Append($"<div class=\"bcard-favicon\" style=\"background-image: url(https://www.google.com/s2/favicons?domain={url})\"></div>")
+                            .Append($"<div class=\"bcard-site\">")
+                            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{ogpData.OgSiteName}</a>")
+                            .Append($"</div>")
+                            .Append($"<div class=\"bcard-url\">")
+                            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{url}</a>")
+                            .Append($"</div>")
+                            .Append($"</span>")
+                            .Append($"<span class=\"bcard-main withogimg\">")
+                            .Append($"<div class=\"bcard-title\">")
+                            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">")
+                            .Append($"{ogpData.Title}")
+                            .Append($"</a>")
+                            .Append($"</div>")
+                            .Append($"<div class=\"bcard-description\">")
+                            .Append($"{ogpData.OgDescription}")
+                            .Append($"</div>")
+                            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">")
+                            .Append($"<div class=\"bcard-img\" style=\"background-image: url({ogpData.OgImage})\"></div>")
+                            .Append($"</a>")
+                            .Append($"</span>")
+                            .Append($"</div>");
+
+                        return new ShortcodeResult(ogpRichLinkGenerate.ToString());
                     }
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e);
+                    context.LogError($"Error:{e.Message} Url:{url} Content:{content}");
 
                     //HTMLパースに失敗したらURLをそのままリンクとして表示
                     return result;
                 }
             }
-
             return result;
         }
 
@@ -187,7 +238,7 @@ namespace BlogGenerator.ShortCodes
                 return;
             }
 
-            await _semaphore.WaitAsync();
+            await Semaphore.WaitAsync();
 
             try
             {
@@ -218,7 +269,7 @@ namespace BlogGenerator.ShortCodes
 
                                 list.Add($"{oEmbedProviderJson.ProviderUrl}.*");
 
-                                _oembedProviderDic.Add(providerName, list);
+                                OembedProviderDic.Add(providerName, list);
                             }
                         }
                     }
@@ -226,12 +277,12 @@ namespace BlogGenerator.ShortCodes
                 }
                 catch (Exception ex)
                 {
-                    context.LogWarning($"Error getting feed for{ex.Message}");
+                    context.LogWarning($"Error getting for{ex.Message}");
                 }
             }
             finally
             {
-                _semaphore.Release();
+                Semaphore.Release();
             }
         }
 
@@ -245,25 +296,115 @@ namespace BlogGenerator.ShortCodes
         private async Task<(bool IsSuccess, string content)> GetWebsiteContentAsync(IExecutionContext context, string url)
         {
             using var httpClient = context.CreateHttpClient();
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Statiq");
+            httpClient.Timeout = TimeSpan.FromMilliseconds(5000);
 
-            var response = await httpClient.GetAsync(url);
-            if (response.StatusCode == HttpStatusCode.Redirect ||
-                response.StatusCode == HttpStatusCode.MovedPermanently)
+            try
             {
-                context.LogWarning($"Attempting to follow redirect for oEmbed Provider Json");
-                url = response.Headers.Location?.OriginalString;
-                response = await httpClient.GetAsync(url);
+                var response = await httpClient.GetAsync(url);
+                if (response.StatusCode == HttpStatusCode.Redirect ||
+                    response.StatusCode == HttpStatusCode.MovedPermanently)
+                {
+                    url = response.Headers.Location?.OriginalString;
+                    response = await httpClient.GetAsync(url);
+                }
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var byteArray = await response.Content.ReadAsByteArrayAsync();
+
+                    ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
+
+                    return (true, content);
+                }
             }
-
-            if (response.IsSuccessStatusCode)
+            catch (Exception e)
             {
-                var content = await response.Content.ReadAsStringAsync();
-
-                return (true, content);
+                context.LogError($"{e.Message}");
+                context.LogError($"ErrorUrl:{url}");
+                return (false, null);
             }
 
             return (false, null);
+        }
+
+
+
+        private async Task<string> GetEmbedResultAsync(IMetadataDictionary arguments, string endpoint, string url, IEnumerable<string> query, IExecutionContext context)
+        {
+            // Get the oEmbed response
+            EmbedResponse embedResponse;
+            using (HttpClient httpClient = context.CreateHttpClient())
+            {
+                string request = $"{endpoint}?url={WebUtility.UrlEncode(url)}";
+                if (arguments.ContainsKey(Format))
+                {
+                    request += $"&format={arguments.GetString(Format)}";
+                }
+                if (arguments.ContainsKey(MaxWidth))
+                {
+                    request += $"&maxwidth={arguments.GetString(MaxWidth)}";
+                }
+                if (arguments.ContainsKey(MaxHeight))
+                {
+                    request += $"&maxheight={arguments.GetString(MaxHeight)}";
+                }
+                if (query is object)
+                {
+                    request += "&" + string.Join("&", query);
+                }
+                HttpResponseMessage response = await httpClient.GetAsync(request);
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    context.LogError($"Received 404 not found for oEmbed at {request}");
+                }
+                response.EnsureSuccessStatusCode();
+                if (response.Content.Headers.ContentType?.MediaType is MediaTypeNames.Application.Json or MediaTypeNames.Text.Plain or MediaTypeNames.Text.Html)
+                {
+                    DataContractJsonSerializer serializer = new DataContractJsonSerializer(typeof(EmbedResponse));
+                    using (Stream stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        embedResponse = (EmbedResponse)serializer.ReadObject(stream);
+                    }
+                }
+                else if (response.Content.Headers.ContentType.MediaType is MediaTypeNames.Application.Xml or MediaTypeNames.Text.Xml)
+                {
+                    DataContractSerializer serializer = new DataContractSerializer(typeof(EmbedResponse));
+                    using (Stream stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        embedResponse = (EmbedResponse)serializer.ReadObject(stream);
+                    }
+                }
+                else
+                {
+                    throw new InvalidDataException("Unknown content type for oEmbed response");
+                }
+            }
+
+            // Switch based on type
+            if (!string.IsNullOrEmpty(embedResponse.Html))
+            {
+                return embedResponse.Html;
+            }
+            else if (embedResponse.Type == "photo")
+            {
+                if (string.IsNullOrEmpty(embedResponse.Url)
+                    || string.IsNullOrEmpty(embedResponse.Width)
+                    || string.IsNullOrEmpty(embedResponse.Height))
+                {
+                    throw new InvalidDataException("Did not receive required oEmbed values for image type");
+                }
+                return $"<img src=\"{embedResponse.Url}\" width=\"{embedResponse.Width}\" height=\"{embedResponse.Height}\" />";
+            }
+            else if (embedResponse.Type == "link")
+            {
+                if (!string.IsNullOrEmpty(embedResponse.Title))
+                {
+                    return $"<a href=\"{url}\">{embedResponse.Title}</a>";
+                }
+                return $"<a href=\"{url}\">{url}</a>";
+            }
+
+            throw new InvalidDataException("Could not determine embedded content for oEmbed response");
         }
     }
 }
