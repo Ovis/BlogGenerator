@@ -3,6 +3,7 @@ using System.Xml.Serialization;
 
 namespace BlogGenerator.ShortCodes.Models
 {
+    [XmlRoot("oembed")]
     public class EmbedResponse
     {
         [JsonPropertyName("type")]

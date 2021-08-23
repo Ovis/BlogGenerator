@@ -4,13 +4,12 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Mime;
-using System.Runtime.Serialization;
-using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
 using AngleSharp.Html.Parser;
 using BlogGenerator.Converters;
 using BlogGenerator.ShortCodes.Models;
@@ -25,10 +24,9 @@ namespace BlogGenerator.ShortCodes
     {
         private const string TargetUrl = nameof(TargetUrl);
         private const string EnableDiscovery = nameof(EnableDiscovery);
+        private const string IsVideo = nameof(IsVideo);
 
-        protected const string Format = nameof(Format);
-        protected const string MaxWidth = nameof(MaxWidth);
-        protected const string MaxHeight = nameof(MaxHeight);
+        private const string OEmbedProviderList = "https://oembed.com/providers.json";
 
         private static volatile bool _initialized;
 
@@ -51,8 +49,8 @@ namespace BlogGenerator.ShortCodes
 
                 try
                 {
-                    var (isSuccess, content) =
-                        await GetWebsiteContentAsync(context, "https://oembed.com/providers.json");
+                    var (isSuccess, content, _) =
+                        await GetWebsiteContentAsync(context, OEmbedProviderList);
 
                     if (isSuccess)
                     {
@@ -75,6 +73,7 @@ namespace BlogGenerator.ShortCodes
                             }
                         }
                     }
+
                     _initialized = true;
                 }
                 catch (Exception ex)
@@ -108,7 +107,8 @@ namespace BlogGenerator.ShortCodes
             }
 
             var arguments = args.ToDictionary(
-                TargetUrl
+                TargetUrl,
+                IsVideo
             );
             arguments.RequireKeys(TargetUrl);
 
@@ -122,7 +122,7 @@ namespace BlogGenerator.ShortCodes
 
             //oEmbed Providerリストチェック
             {
-                var (isGetLinkSuccess, richLinkHtml) = await GetRichLinkByOEmbedProviderAsync(url, arguments, context);
+                var (isGetLinkSuccess, richLinkHtml) = await GetRichLinkByOEmbedProviderAsync(url, context);
 
                 if (isGetLinkSuccess)
                 {
@@ -142,13 +142,24 @@ namespace BlogGenerator.ShortCodes
                 metaData = data;
             }
 
-            if (arguments.GetBool(EnableDiscovery) && (!string.IsNullOrEmpty(metaData.OembedJson)))
+            if (arguments.GetBool(EnableDiscovery))
             {
-                var (isGetLinkSuccess, richLinkHtml) = await GetRichLinkByOEmbedDiscoveryProviderAsync(metaData, context);
+                var oEmbedEndPoint = string.Empty;
 
-                if (isGetLinkSuccess)
+                if (!string.IsNullOrEmpty(metaData.OembedJson))
                 {
-                    return new ShortcodeResult(richLinkHtml);
+                    oEmbedEndPoint = metaData.OembedJson;
+                }
+                else if (!string.IsNullOrEmpty(metaData.OembedXml))
+                {
+                    oEmbedEndPoint = metaData.OembedXml;
+                }
+
+                var (isSuccess, richLinkString, _, _) = await GetEmbedResultAsync(oEmbedEndPoint, null, context);
+
+                if (isSuccess)
+                {
+                    return new ShortcodeResult(richLinkString);
                 }
             }
 
@@ -181,13 +192,14 @@ namespace BlogGenerator.ShortCodes
                 .Append($"</script>")
                 .Append($"</p>").ToString();
 
-        private async Task<(bool IsGetLinkSuccess, string RichLinkHtml)> GetRichLinkByOEmbedProviderAsync(string url, IMetadataDictionary arguments, IExecutionContext context)
+        private async Task<(bool IsGetLinkSuccess, string RichLinkHtml)> GetRichLinkByOEmbedProviderAsync(string url, IExecutionContext context)
         {
             var existProviderName = "";
 
             //oEmbed Providerリストチェック
             {
-                foreach (var dic in OembedProviderDic.Where(dic => dic.Value.Select(pattern => Regex.IsMatch(url, pattern)).Any(isMatch => isMatch)))
+                foreach (var dic in OembedProviderDic.Where(dic =>
+                    dic.Value.Select(pattern => Regex.IsMatch(url, pattern)).Any(isMatch => isMatch)))
                 {
                     existProviderName = dic.Key;
                 }
@@ -212,22 +224,15 @@ namespace BlogGenerator.ShortCodes
 
                     if (!string.IsNullOrEmpty(oembedEndPointUrl))
                     {
-                        try
-                        {
-                            var embedResult = await GetEmbedResultAsync(arguments, oembedEndPointUrl, url, new List<string>(), context);
+                        var (isSuccess, richLinkString, _, error) = await GetEmbedResultAsync(oembedEndPointUrl, url, context);
 
-                            var resultString = new StringBuilder()
-                                .Append($"<p>")
-                                .Append($"{embedResult}")
-                                .Append($"</p>").ToString();
-
-                            return (true, resultString);
-                        }
-                        catch (Exception e)
+                        if (!isSuccess)
                         {
-                            context.LogError($"Error:{e.Message} Url:{url} EndPoint:{oembedEndPointUrl}");
-                            return (true, GetDefaultLink(url));
+                            context.LogError($"Error:{error} Url:{url} EndPoint:{oembedEndPointUrl}");
+                            return (false, null);
                         }
+
+                        return (true, richLinkString);
                     }
                 }
             }
@@ -235,12 +240,13 @@ namespace BlogGenerator.ShortCodes
             return (false, null);
         }
 
-        private async Task<(bool IsGetDataSuccess, SiteMetaData Data)> GetSiteMetaDataAsync(string url, IExecutionContext context)
+        private async Task<(bool IsGetDataSuccess, SiteMetaData Data)> GetSiteMetaDataAsync(string url,
+            IExecutionContext context)
         {
             {
                 string content;
                 {
-                    var (isSuccess, contentHtml) = await GetWebsiteContentAsync(context, url);
+                    var (isSuccess, contentHtml, _) = await GetWebsiteContentAsync(context, url);
 
                     if (!isSuccess)
                     {
@@ -261,11 +267,15 @@ namespace BlogGenerator.ShortCodes
                         Title = parseDoc.QuerySelector("title")?.TextContent,
                         OgTitle = parseDoc.QuerySelector("meta[property='og:title']")?.GetAttribute("content"),
                         OgImage = parseDoc.QuerySelector("meta[property='og:image']")?.GetAttribute("content"),
-                        OgDescription = parseDoc.QuerySelector("meta[property='og:description']")?.GetAttribute("content"),
+                        OgDescription = parseDoc.QuerySelector("meta[property='og:description']")
+                            ?.GetAttribute("content"),
                         OgType = parseDoc.QuerySelector("meta[property='og:type']")?.GetAttribute("content"),
                         OgUrl = parseDoc.QuerySelector("meta[property='og:url']")?.GetAttribute("content"),
                         OgSiteName = parseDoc.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content"),
-                        OembedJson = parseDoc.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href")
+                        OembedJson = parseDoc.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href"),
+                        OembedXml = string.IsNullOrEmpty(parseDoc.QuerySelector("link[type='application/xml+oembed']")?.GetAttribute("href"))
+                            ? parseDoc.QuerySelector("link[type='application/xml+oembed']")?.GetAttribute("href") :
+                            parseDoc.QuerySelector("link[type='text/xml+oembed']")?.GetAttribute("href")
                     };
 
                     return (true, ogpData);
@@ -280,32 +290,7 @@ namespace BlogGenerator.ShortCodes
             }
         }
 
-        private async Task<(bool IsGetLinkSuccess, string RichLinkHtml)> GetRichLinkByOEmbedDiscoveryProviderAsync(SiteMetaData metaData, IExecutionContext context)
-        {
-            var (isSuccess, jsonContent) = await GetWebsiteContentAsync(context, metaData.OembedJson);
 
-            if (!isSuccess) return (false, null);
-
-            var deserializeOptions = new JsonSerializerOptions();
-            deserializeOptions.Converters.Add(new AutoNumberToStringConverter());
-
-            var jsonData = JsonSerializer.Deserialize<Models.EmbedResponse>(jsonContent, deserializeOptions);
-
-            switch (jsonData?.Type)
-            {
-                case "link":
-                    break;
-
-                case "photo":
-                    break;
-
-                case "video":
-                case "rich":
-                    return (true, jsonData.Html);
-            }
-
-            return (false, null);
-        }
 
         private string GetOgpRichLink(string url, SiteMetaData metaData)
         {
@@ -314,7 +299,8 @@ namespace BlogGenerator.ShortCodes
             var ogpRichLinkGenerate = new StringBuilder()
                 .Append($"<div class=\"bcard-wrapper\">")
                 .Append($"<span class=\"bcard-header withgfav\">")
-                .Append($"<div class=\"bcard-favicon\" style=\"background-image: url(https://www.google.com/s2/favicons?domain={url})\"></div>")
+                .Append(
+                    $"<div class=\"bcard-favicon\" style=\"background-image: url(https://www.google.com/s2/favicons?domain={url})\"></div>")
                 .Append($"<div class=\"bcard-site\">")
                 .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{metaData.OgSiteName}</a>")
                 .Append($"</div>")
@@ -336,12 +322,15 @@ namespace BlogGenerator.ShortCodes
                 .Append($"</a>")
                 .Append($"</span>")
                 .Append($"<span>")
-                .Append($"<a href=\"//b.hatena.ne.jp/entry/s/{noSchemeUrl}\" ref=\"nofollow\" target=\"_blank\"><img src=\"//b.st-hatena.com/entry/image/{url}\" alt=\"[はてなブックマークで表示]\"></a>")
+                .Append(
+                    $"<a href=\"//b.hatena.ne.jp/entry/s/{noSchemeUrl}\" ref=\"nofollow\" target=\"_blank\"><img src=\"//b.st-hatena.com/entry/image/{url}\" alt=\"[はてなブックマークで表示]\"></a>")
                 .Append($"</span>")
                 .Append($"</div>");
 
             return ogpRichLinkGenerate.ToString();
         }
+
+
 
         /// <summary>
         /// 指定されたURLのコンテンツを取得して文字列型で返す
@@ -349,12 +338,13 @@ namespace BlogGenerator.ShortCodes
         /// <param name="context"></param>
         /// <param name="url"></param>
         /// <returns></returns>
-        private async Task<(bool IsSuccess, string content)> GetWebsiteContentAsync(IExecutionContext context, string url)
+        private async Task<(bool IsSuccess, string Content, string MediaType)> GetWebsiteContentAsync(
+            IExecutionContext context, string url)
         {
             using var httpClient = context.CreateHttpClient();
 
-            //処理の都合5秒でタイムアウト
-            httpClient.Timeout = TimeSpan.FromMilliseconds(5000);
+            //処理の都合10秒でタイムアウト
+            httpClient.Timeout = TimeSpan.FromMilliseconds(10000);
 
             try
             {
@@ -368,120 +358,91 @@ namespace BlogGenerator.ShortCodes
 
                 if (response.IsSuccessStatusCode)
                 {
+                    var mediaType = response.Content.Headers.ContentType?.MediaType;
+
                     var byteArray = await response.Content.ReadAsByteArrayAsync();
 
                     ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
 
-                    return (true, content);
+                    return (true, content, mediaType);
                 }
             }
             catch (Exception e)
             {
                 context.LogError($"{e.Message}");
                 context.LogError($"ErrorUrl:{url}");
-                return (false, null);
+                return (false, null, null);
             }
 
-            return (false, null);
+            return (false, null, null);
         }
 
 
 
-        private async Task<string> GetEmbedResultAsync(IMetadataDictionary arguments, string endpoint, string url, IEnumerable<string> query, IExecutionContext context)
+        private async Task<(bool IsSuccess, string RichLinkString, bool IsVideo, Exception Error)> GetEmbedResultAsync(string endpoint, string url, IExecutionContext context)
         {
-            // Get the oEmbed response
-            EmbedResponse embedResponse;
+            var request = string.IsNullOrEmpty(url) ? endpoint : $"{endpoint}?url={WebUtility.UrlEncode(url)}";
 
-            using var httpClient = context.CreateHttpClient();
+            try
+            {
+                var (isSuccess, content, mediaType) = await GetWebsiteContentAsync(context, request);
 
-            var request = $"{endpoint}?url={WebUtility.UrlEncode(url)}";
-            if (arguments.ContainsKey(Format))
-            {
-                request += $"&format={arguments.GetString(Format)}";
-            }
-            if (arguments.ContainsKey(MaxWidth))
-            {
-                request += $"&maxwidth={arguments.GetString(MaxWidth)}";
-            }
-            if (arguments.ContainsKey(MaxHeight))
-            {
-                request += $"&maxheight={arguments.GetString(MaxHeight)}";
-            }
-            if (query != null)
-            {
-                request += "&" + string.Join("&", query);
-            }
+                if (!isSuccess)
+                {
+                    return (false, null, false, null);
+                }
 
-            var response = await httpClient.GetAsync(request);
+                EmbedResponse embedResponse;
+                switch (mediaType)
+                {
+                    case MediaTypeNames.Application.Json or MediaTypeNames.Text.Plain or MediaTypeNames.Text.Html:
+                        {
+                            var deserializeOptions = new JsonSerializerOptions();
+                            deserializeOptions.Converters.Add(new AutoNumberToStringConverter());
 
-            if (response.StatusCode == HttpStatusCode.NotFound)
-            {
-                context.LogError($"Received 404 not found for oEmbed at {request}");
+                            embedResponse = JsonSerializer.Deserialize<EmbedResponse>(content, deserializeOptions);
+                            break;
+                        }
+                    case MediaTypeNames.Application.Xml or MediaTypeNames.Text.Xml:
+                        {
+                            var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+
+                            embedResponse = (EmbedResponse)new XmlSerializer(typeof(EmbedResponse)).Deserialize(stream);
+                            break;
+                        }
+                    default:
+                        return (false, null, false, new InvalidDataException("Unknown MediaType for oEmbed response"));
+                }
+
+
+                if (!string.IsNullOrEmpty(embedResponse?.Html))
+                {
+                    return (true, embedResponse.Html, embedResponse.Type == "video", null);
+                }
+
+                switch (embedResponse?.Type)
+                {
+                    case "photo" when string.IsNullOrEmpty(embedResponse.Url)
+                                      || string.IsNullOrEmpty(embedResponse.Width)
+                                      || string.IsNullOrEmpty(embedResponse.Height):
+                        throw new InvalidDataException("Did not receive required oEmbed values for image type");
+
+                    case "photo":
+                        return (true,
+                            $"<img src=\"{embedResponse.Url}\" width=\"{embedResponse.Width}\" height=\"{embedResponse.Height}\" />",
+                            false, null);
+                    case "link":
+                        return (false, null, false, null);
+                    default:
+                        return (false, null, false,
+                            new InvalidDataException("Unknown content type for oEmbed response"));
+                }
             }
-            response.EnsureSuccessStatusCode();
-
-            if (response.Content.Headers.ContentType?.MediaType is MediaTypeNames.Application.Json or MediaTypeNames.Text.Plain or MediaTypeNames.Text.Html)
+            catch (Exception e)
             {
-                var serializer = new DataContractJsonSerializer(typeof(EmbedResponse));
-
-                await using var stream = await response.Content.ReadAsStreamAsync();
-
-                embedResponse = (EmbedResponse)serializer.ReadObject(stream);
-            }
-            else if (response.Content.Headers.ContentType?.MediaType is MediaTypeNames.Application.Xml or MediaTypeNames.Text.Xml)
-            {
-                var serializer = new DataContractSerializer(typeof(EmbedResponse));
-                await using var stream = await response.Content.ReadAsStreamAsync();
-                embedResponse = (EmbedResponse)serializer.ReadObject(stream);
-            }
-            else
-            {
-                throw new InvalidDataException("Unknown content type for oEmbed response");
-            }
-
-            // Switch based on type
-            if (!string.IsNullOrEmpty(embedResponse?.Html))
-            {
-                return embedResponse.Html;
-            }
-
-            switch (embedResponse?.Type)
-            {
-                case "photo" when string.IsNullOrEmpty(embedResponse.Url)
-                                  || string.IsNullOrEmpty(embedResponse.Width)
-                                  || string.IsNullOrEmpty(embedResponse.Height):
-                    throw new InvalidDataException("Did not receive required oEmbed values for image type");
-                case "photo":
-                    return $"<img src=\"{embedResponse.Url}\" width=\"{embedResponse.Width}\" height=\"{embedResponse.Height}\" />";
-                case "link":
-                    return !string.IsNullOrEmpty(embedResponse.Title) ? $"<a href=\"{url}\">{embedResponse.Title}</a>" : $"<a href=\"{url}\" target=\"_blank\">{url}</a>";
-                default:
-                    throw new InvalidDataException("Could not determine embedded content for oEmbed response");
+                Console.WriteLine(e);
+                return (false, null, false, e);
             }
         }
-
-    }
-
-
-    [DataContract(Name = "oembed", Namespace = "")]
-    public class EmbedResponse
-    {
-        [DataMember(Name = "type")]
-        public string Type { get; set; }
-
-        [DataMember(Name = "url")]
-        public string Url { get; set; }
-
-        [DataMember(Name = "title")]
-        public string Title { get; set; }
-
-        [DataMember(Name = "width")]
-        public string Width { get; set; }
-
-        [DataMember(Name = "height")]
-        public string Height { get; set; }
-
-        [DataMember(Name = "html")]
-        public string Html { get; set; }
     }
 }

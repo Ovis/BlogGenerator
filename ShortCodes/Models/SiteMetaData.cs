@@ -20,5 +20,7 @@
 
         public string OembedJson { get; set; }
 
+        public string OembedXml { get; set; }
+
     }
 }
