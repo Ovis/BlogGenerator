@@ -49,7 +49,7 @@ namespace BlogGenerator.ShortCodes
 
                 try
                 {
-                    var (isSuccess, content, _) =
+                    var (isSuccess, content, _, _) =
                         await GetWebsiteContentAsync(context, OEmbedProviderList);
 
                     if (isSuccess)
@@ -78,7 +78,7 @@ namespace BlogGenerator.ShortCodes
                 }
                 catch (Exception ex)
                 {
-                    context.LogWarning($"Error getting for{ex.Message}");
+                    context.LogError($"oEmbed provider json could not be obtained. Error:{ex.Message}");
                 }
             }
             finally
@@ -113,35 +113,38 @@ namespace BlogGenerator.ShortCodes
             arguments.RequireKeys(TargetUrl);
 
             var url = arguments.GetString(TargetUrl);
+            var isVideoContent = arguments.GetBool(IsVideo);
 
             //GistはoEmbedが提供されていないので直接生成
             if (url.Contains("gist.github.com"))
             {
-                return new ShortcodeResult(GetGistEmbedContent(url));
+                return SetParagraph(GetGistEmbedContent(url), isVideoContent);
             }
 
-            //oEmbed Providerリストチェック
+            //oEmbed ProviderリストによるoEmbed処理
             {
-                var (isGetLinkSuccess, richLinkHtml) = await GetRichLinkByOEmbedProviderAsync(url, context);
+                var (isGetLinkSuccess, richLinkHtml, isVideo) = await GetRichLinkByOEmbedProviderAsync(url, context);
 
                 if (isGetLinkSuccess)
                 {
-                    return new ShortcodeResult(richLinkHtml);
+                    return SetParagraph(richLinkHtml, isVideo);
                 }
             }
 
+            //WebページからMETAタグを取得
             SiteMetaData metaData;
             {
                 var (isGetDataSuccess, data) = await GetSiteMetaDataAsync(url, context);
 
                 if (!isGetDataSuccess)
                 {
-                    return new ShortcodeResult(GetDefaultLink(url));
+                    return SetParagraph(GetStandardLink(url), isVideoContent);
                 }
 
                 metaData = data;
             }
 
+            //oEmbed Discovery
             if (arguments.GetBool(EnableDiscovery))
             {
                 var oEmbedEndPoint = string.Empty;
@@ -159,21 +162,41 @@ namespace BlogGenerator.ShortCodes
 
                 if (isSuccess)
                 {
-                    return new ShortcodeResult(richLinkString);
+                    return SetParagraph(richLinkString, isVideoContent);
                 }
             }
 
-
+            //OGP情報が存在する場合はOGP情報からリッチリンクを作成する
             if (!string.IsNullOrEmpty(metaData.OgTitle) && !string.IsNullOrEmpty(metaData.OgUrl))
             {
-                return new ShortcodeResult(GetOgpRichLink(url, metaData));
+                return SetParagraph(GetOgpRichLink(url, metaData), isVideoContent);
             }
 
-
-            return new ShortcodeResult(GetDefaultLink(url));
+            return SetParagraph(GetStandardLink(url), isVideoContent);
         }
 
-        private string GetDefaultLink(string url) =>
+
+        /// <summary>
+        /// 立地リンクの段落タグを付与
+        /// </summary>
+        /// <param name="linkHtml"></param>
+        /// <param name="isVideo"></param>
+        /// <returns></returns>
+        private static ShortcodeResult SetParagraph(string linkHtml, bool isVideo = false) =>
+            new(new StringBuilder()
+                .Append($"<p")
+                .Append($"{(isVideo ? " class='oembed-video'" : "")}")
+                .Append($">")
+                .Append(linkHtml)
+                .Append($"</p>").ToString());
+
+
+        /// <summary>
+        /// 標準的なAタグによるリンクの生成
+        /// </summary>
+        /// <param name="url"></param>
+        /// <returns></returns>
+        private static string GetStandardLink(string url) =>
             new StringBuilder()
                 .Append($"<p>")
                 .Append($"<a href=\"")
@@ -183,7 +206,13 @@ namespace BlogGenerator.ShortCodes
                 .Append($"</a>")
                 .Append($"</p>").ToString();
 
-        private string GetGistEmbedContent(string url) =>
+
+        /// <summary>
+        /// GitHub Gist用埋め込みコードの生成
+        /// </summary>
+        /// <param name="url"></param>
+        /// <returns></returns>
+        private static string GetGistEmbedContent(string url) =>
             new StringBuilder()
                 .Append($"<p>")
                 .Append($"<script src=\"")
@@ -192,7 +221,14 @@ namespace BlogGenerator.ShortCodes
                 .Append($"</script>")
                 .Append($"</p>").ToString();
 
-        private async Task<(bool IsGetLinkSuccess, string RichLinkHtml)> GetRichLinkByOEmbedProviderAsync(string url, IExecutionContext context)
+
+        /// <summary>
+        /// oEmbed プロバイダーリストからリッチリンクを生成
+        /// </summary>
+        /// <param name="url"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
+        private async Task<(bool IsGetLinkSuccess, string RichLinkHtml, bool IsVideo)> GetRichLinkByOEmbedProviderAsync(string url, IExecutionContext context)
         {
             var existProviderName = "";
 
@@ -204,49 +240,53 @@ namespace BlogGenerator.ShortCodes
                     existProviderName = dic.Key;
                 }
 
-                if (!string.IsNullOrEmpty(existProviderName))
+                //リストになければ抜ける
+                if (string.IsNullOrEmpty(existProviderName)) return (false, null, false);
+
+
+                var oembedEndPointUrl = string.Empty;
+
+                var providerData = _jsonData.Where(r => r.ProviderName == existProviderName);
+
+                foreach (var data in providerData)
                 {
-                    //oEmbedプロバイダに存在する
-
-                    var oembedEndPointUrl = string.Empty;
-
-                    var providerData = _jsonData.Where(r => r.ProviderName == existProviderName);
-
-                    foreach (var data in providerData)
+                    foreach (var endPoint in data.EndPoints.Where(endPoint =>
+                        endPoint.Schemes.Select(regexUrl => regexUrl.Replace("*", @".*"))
+                            .Any(r => Regex.IsMatch(url, r))))
                     {
-                        foreach (var endPoint in data.EndPoints.Where(endPoint =>
-                            endPoint.Schemes.Select(regexUrl => regexUrl.Replace("*", @".*"))
-                                .Any(r => Regex.IsMatch(url, r))))
-                        {
-                            oembedEndPointUrl = endPoint.Url;
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(oembedEndPointUrl))
-                    {
-                        var (isSuccess, richLinkString, _, error) = await GetEmbedResultAsync(oembedEndPointUrl, url, context);
-
-                        if (!isSuccess)
-                        {
-                            context.LogError($"Error:{error} Url:{url} EndPoint:{oembedEndPointUrl}");
-                            return (false, null);
-                        }
-
-                        return (true, richLinkString);
+                        oembedEndPointUrl = endPoint.Url;
                     }
                 }
-            }
 
-            return (false, null);
+                if (string.IsNullOrEmpty(oembedEndPointUrl)) return (false, null, false);
+
+
+                var (isSuccess, richLinkString, isVideo, error) = await GetEmbedResultAsync(oembedEndPointUrl, url, context);
+
+                if (!isSuccess)
+                {
+                    context.LogWarning($"Error:{error} Url:{url} EndPoint:{oembedEndPointUrl}");
+                    return (false, null, false);
+                }
+
+                return (true, richLinkString, isVideo);
+            }
         }
 
+
+        /// <summary>
+        /// ウェブサイトのメタデータ情報を取得
+        /// </summary>
+        /// <param name="url"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
         private async Task<(bool IsGetDataSuccess, SiteMetaData Data)> GetSiteMetaDataAsync(string url,
             IExecutionContext context)
         {
             {
                 string content;
                 {
-                    var (isSuccess, contentHtml, _) = await GetWebsiteContentAsync(context, url);
+                    var (isSuccess, contentHtml, _, _) = await GetWebsiteContentAsync(context, url);
 
                     if (!isSuccess)
                     {
@@ -267,8 +307,7 @@ namespace BlogGenerator.ShortCodes
                         Title = parseDoc.QuerySelector("title")?.TextContent,
                         OgTitle = parseDoc.QuerySelector("meta[property='og:title']")?.GetAttribute("content"),
                         OgImage = parseDoc.QuerySelector("meta[property='og:image']")?.GetAttribute("content"),
-                        OgDescription = parseDoc.QuerySelector("meta[property='og:description']")
-                            ?.GetAttribute("content"),
+                        OgDescription = parseDoc.QuerySelector("meta[property='og:description']")?.GetAttribute("content"),
                         OgType = parseDoc.QuerySelector("meta[property='og:type']")?.GetAttribute("content"),
                         OgUrl = parseDoc.QuerySelector("meta[property='og:url']")?.GetAttribute("content"),
                         OgSiteName = parseDoc.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content"),
@@ -282,7 +321,7 @@ namespace BlogGenerator.ShortCodes
                 }
                 catch (Exception e)
                 {
-                    context.LogError($"Error:{e.Message} Url:{url} Content:{content}");
+                    context.LogWarning($"Error:{e.Message} Url:{url} Content:{content}");
 
                     //HTMLパースに失敗したらURLをそのままリンクとして表示
                     return (false, null);
@@ -291,8 +330,13 @@ namespace BlogGenerator.ShortCodes
         }
 
 
-
-        private string GetOgpRichLink(string url, SiteMetaData metaData)
+        /// <summary>
+        /// OGPデータによるリッチリンク生成
+        /// </summary>
+        /// <param name="url"></param>
+        /// <param name="metaData"></param>
+        /// <returns></returns>
+        private static string GetOgpRichLink(string url, SiteMetaData metaData)
         {
             var noSchemeUrl = url.Replace($"{new Uri(url).Scheme}://", "");
 
@@ -338,7 +382,7 @@ namespace BlogGenerator.ShortCodes
         /// <param name="context"></param>
         /// <param name="url"></param>
         /// <returns></returns>
-        private async Task<(bool IsSuccess, string Content, string MediaType)> GetWebsiteContentAsync(
+        private static async Task<(bool IsSuccess, string Content, string MediaType, Exception Error)> GetWebsiteContentAsync(
             IExecutionContext context, string url)
         {
             using var httpClient = context.CreateHttpClient();
@@ -356,6 +400,8 @@ namespace BlogGenerator.ShortCodes
                     response = await httpClient.GetAsync(url);
                 }
 
+                response.EnsureSuccessStatusCode();
+
                 if (response.IsSuccessStatusCode)
                 {
                     var mediaType = response.Content.Headers.ContentType?.MediaType;
@@ -364,32 +410,42 @@ namespace BlogGenerator.ShortCodes
 
                     ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
 
-                    return (true, content, mediaType);
+                    return (true, content, mediaType, null);
                 }
+            }
+            catch (TaskCanceledException e)
+            {
+                //タイムアウト
+                context.LogWarning($"{e.Message}");
+                return (false, null, null, e);
             }
             catch (Exception e)
             {
-                context.LogError($"{e.Message}");
-                context.LogError($"ErrorUrl:{url}");
-                return (false, null, null);
+                return (false, null, null, e);
             }
 
-            return (false, null, null);
+            return (false, null, null, null);
         }
 
 
-
+        /// <summary>
+        /// oEmbedプロバイダから結果を取得
+        /// </summary>
+        /// <param name="endpoint"></param>
+        /// <param name="url"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
         private async Task<(bool IsSuccess, string RichLinkString, bool IsVideo, Exception Error)> GetEmbedResultAsync(string endpoint, string url, IExecutionContext context)
         {
             var request = string.IsNullOrEmpty(url) ? endpoint : $"{endpoint}?url={WebUtility.UrlEncode(url)}";
 
             try
             {
-                var (isSuccess, content, mediaType) = await GetWebsiteContentAsync(context, request);
+                var (isSuccess, content, mediaType, error) = await GetWebsiteContentAsync(context, request);
 
                 if (!isSuccess)
                 {
-                    return (false, null, false, null);
+                    return (false, null, false, error);
                 }
 
                 EmbedResponse embedResponse;
@@ -440,7 +496,6 @@ namespace BlogGenerator.ShortCodes
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
                 return (false, null, false, e);
             }
         }
