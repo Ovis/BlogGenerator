@@ -1,3 +1,3 @@
-[submodule "theme"]
-	path = theme
+[submodule "BlogGenerator/theme"]
+	path = BlogGenerator/theme
 	url = https://github.com/Ovis/HitsujinBlogTheme.git

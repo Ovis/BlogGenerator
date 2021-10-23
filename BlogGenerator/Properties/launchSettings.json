@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "BlogGenerator": {
+      "commandName": "Project",
+      "commandLineArgs": "preview --port 5082"
+    }
+  }
+}
