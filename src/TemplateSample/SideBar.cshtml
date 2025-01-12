@@ -1,0 +1,130 @@
+@using RazorLight
+@using BlogGenerator.Models
+@inherits TemplatePage<SideBarModel>
+@{
+    var model = Model;
+}
+<aside>
+    <div class="has-text-centered">
+    </div>
+</aside>
+<aside class="mt-5">
+    <div class="has-text-centered">
+        <img src="@Model.GeneratePath("/img/icon.png")" width="100px" height="100px" loading="lazy">
+        <h1 class="title is-5">@Model.SiteOption.SiteAuthor</h1>
+    </div>
+    <div class="content mb-3">
+        <p class="mt-5">@Model.SiteOption.SiteAuthorDescription</p>
+    </div>
+    <div>
+        <ul class="level is-mobile">
+            <li class="level-item">
+                <a href="">
+                    <span class="icon is-medium">
+                        <i class="fas fa-user-circle fa-2x has-text-black"></i>
+                    </span>
+                </a>
+            </li>
+            <li class="level-item">
+                <a href="https://x.com/">
+                    <span class="icon is-medium">
+                        <i class="fab fa-twitter fa-2x has-text-black"></i>
+                    </span>
+                </a>
+            </li>
+            <li class="level-item">
+                <a href="https://github.com/">
+                    <span class="icon is-medium">
+                        <i class="fab fa-github fa-2x has-text-black"></i>
+                    </span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</aside>
+<aside class="mt-5">
+    <h1 class="title is-5">Recent</h1>
+    <nav class="panel panel-white">
+        @{
+            var latestPosts = model.Articles.Take(10);
+
+            foreach (var post in latestPosts)
+            {
+                <a class="panel-block" href="@post.RootRelativePath">
+                    <span class="panel-icon">
+                        <i class="fas fa-book" aria-hidden="true"></i>
+                    </span>@post.Title
+                </a>
+            }
+        }
+    </nav>
+</aside>
+<aside class="mt-5">
+    <h1 class="title is-5">Ads</h1>
+    <div align="center">
+        <!-- サイドバー -->
+    </div>
+</aside>
+<aside class="mt-5">
+    <h1 class="title is-5">Tags</h1>
+    <nav class="panel panel-white">
+        @{
+            var tags = model.Articles.SelectMany(x => x.Tags).Distinct().ToArray()
+            .Select(tag => new
+            {
+                Tag = tag,
+                Count = model.Articles.Count(x => x.Tags.Contains(tag))
+            })
+            .OrderByDescending(r => r.Count)
+            .Take(10)
+            .ToArray();
+
+            foreach (var tag in tags)
+            {
+                <a class="panel-block" href="@Model.GeneratePath($"/tags/{tag.Tag}")">
+                    <span class="panel-icon">
+                        <i class="fas fa-book" aria-hidden="true"></i>
+                    </span>
+                    <span>@tag.Tag (@tag.Count)</span>
+                </a>
+            }
+        }
+    </nav>
+</aside>
+<aside class="mt-5">
+    <h1 class="title is-5">Archive</h1>
+    <nav class="panel panel-white">
+        @{
+            var yearMonthCount = model.Articles.GroupBy(x => new { Year = x.Published.Year, Month = x.Published.Month })
+            .Select(group => new
+            {
+                Year = group.Key.Year,
+                Month = group.Key.Month,
+                Count = group.Count()
+            })
+            .ToArray();
+
+            foreach (var g in yearMonthCount)
+            {
+                <a class="panel-block" href="@Model.GeneratePath($"/{g.Year}/{g.Month.ToString("D2")}")">
+                    <span class="panel-icon">
+                        <i class="fas fa-book" aria-hidden="true"></i>
+                    </span>
+                    <span>@($"{g.Year}-{g.Month.ToString("D2")}") (@g.Count)</span>
+                </a>
+            }
+        }
+    </nav>
+</aside>
+<aside class="mt-5 ml-2">
+  <ul>
+    <li>
+      <a href="@Model.GeneratePath("/feed.rss")">
+        <i class="fa fa-rss"></i>RSS Feed</a>
+    </li>
+    <li>
+      <a href="@Model.GeneratePath("/feed.atom")">
+        <i class="fa fa-rss"></i>Atom Feed</a>
+    </li>
+  </ul>
+</aside>

@@ -1,0 +1,65 @@
+﻿@using RazorLight
+@using BlogGenerator.Models
+@inherits TemplatePage<PageModel>
+
+
+@{
+    foreach(var article in Model.Articles){
+
+        <article class="card mb-6">
+            <header>
+                <div class="card-content pb-0">
+                    <h1 class="title mb-4">
+                        <a href="@(article.RootRelativePath)">@(article.Title)</a>
+                    </h1>
+                    <div class="columns mt-0 mb-0 is-vcentered">
+                        <div class="column is-narrow pt-0">
+                            <div class="columns is-mobile is-vcentered">
+                                <div class="column is-narrow pr-0 is-flex">
+                                    <span class="icon">
+                                        <i class="fas fa-calendar-alt"></i>
+                                    </span>
+                                </div>
+                                <time class="column pl-0 is-narrow">
+                                    <span>@(article.Published.ToString("yyyy/MM/dd hh:mm:ss"))</span>
+                                </time>
+                            </div>
+                        </div>
+                        <div class="column pt-0">
+                            <div class="columns is-mobile is-vcentered">
+                                <div class="column is-narrow pr-0 is-flex">
+                                    <span class="icon">
+                                        <i class="fas fa-tags"></i>
+                                    </span>
+                                </div>
+                                <ul class="column tags pl-0">
+                                    @foreach (var tag in article.Tags)
+                                    {
+                                        <li class="tag is-link is-light">
+                                            <a class="has-text-dark" href="@Model.GeneratePath($"/tags/{tag}")">@(tag)</a>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <div class="card-content pt-0">
+                <div class="content">
+                    @(article.ExcerptHtml)
+                </div>
+                @if (!string.IsNullOrEmpty(article.RemainingHtml)){
+                    <a class="button is-fullwidth is-link is-outlined" href="@(article.RootRelativePath)">
+                        <span>続きを読む</span>
+                        <span class="icon">
+                            <i class="fas fa-chevron-right"></i>
+                        </span>
+                    </a>
+                }
+            </div>
+        </article>
+    }
+    await IncludeAsync("_pagination.cshtml", Model);
+}
+

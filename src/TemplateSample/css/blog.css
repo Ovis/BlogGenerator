@@ -1,0 +1,148 @@
+a {
+	color: #212529;
+	-webkit-transition: all 0.2s;
+	-moz-transition: all 0.2s;
+	transition: all 0.2s;
+}
+
+a:focus, a:hover {
+	color: #007bff;
+}
+
+nav.panel-white {
+	background: white;
+}
+
+/* Prism Syntax Hightlight */
+.token.number, .token.tag {
+	all: inherit;
+}
+
+/* oembed */
+img {
+	max-width: 50%;
+	height: auto;
+}
+
+.oembed-video {
+  /* 1024px以上の幅の場合に適応 */
+	position: relative;
+	width: 60%;
+}
+
+.oembed-video::before {
+	content: '';
+	display: block;
+	padding-top: 56.25%;
+    /* 高さ÷横幅×100 */;
+}
+
+.oembed-video iframe {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+}
+
+@media screen and (max-width: 1024px) {
+  /* 1024pxまでの幅の場合に適応される */
+	.oembed-video {
+		position: relative;
+		width: 100%;
+	}
+}
+
+.bcard-wrapper {
+	display: block;
+	width: 100%;
+	max-width: 500px;
+	margin: 10px 0px;
+	border-radius: 3px;
+	padding: 12px;
+	border: 1px solid #e0e0e0;
+}
+
+.bcard-site, .bcard-url {
+	font-size: 12px;
+	line-height: 1.3;
+	overflow: hidden;
+	max-height: 15px;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 1;
+}
+
+.bcard-header {
+	position: relative;
+	height: 30px;
+	margin-bottom: 5px;
+	display: block;
+}
+
+.withgfav {
+	padding-left: 23px;
+}
+
+.bcard-favicon {
+	position: absolute;
+	top: 0px;
+	left: 0px;
+	width: 16px;
+	height: 16px;
+}
+
+.bcard-main {
+	overflow: hidden;
+	position: relative;
+	display: block;
+}
+
+.withogimg {
+	padding-right: 110px;
+	height: 100px;
+}
+
+.bcard-img {
+	width: 100px;
+	height: 100px;
+	position: absolute;
+	top: 0;
+	right: 0;
+	background-size: cover;
+	background-position: center center;
+}
+
+.bcard-title {
+	font-size: 17px;
+	margin: 0 0 2px;
+	line-height: 1.4;
+	max-height: 47px;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	font-weight: bold;
+}
+
+.bcard-description {
+	line-height: 1.5;
+	font-size: 12px;
+	max-height: 72px;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+}
+
+.bcard-title a {
+	color: #424242;
+}
+
+.bcard-url a {
+	color: #9e9e9e;
+}
+
+.bcard-title a:hover, .bcard-url a:hover, .bcard-site a:hover {
+	text-decoration: underline;
+}
