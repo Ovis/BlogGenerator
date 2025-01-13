@@ -38,5 +38,9 @@ public class SiteOption
     /// </summary>
     public string SiteAuthorDescription { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Amazonアソシエイトタグ
+    /// </summary>
+    public string AmazonAssociateTag { get; set; } = string.Empty;
 
 }
