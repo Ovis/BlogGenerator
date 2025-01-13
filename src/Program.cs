@@ -31,6 +31,9 @@ if (siteOption == null)
     throw new ArgumentNullException($"{nameof(SiteOption)} is not found in appsettings.json");
 }
 
+// 文字エンコーディング
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
 // RazorLightエンジンの初期化
 var engine = new RazorLightEngineBuilder()
     .UseFileSystemProject(themeDir)
@@ -411,6 +414,7 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
     var pipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
+        .Use<OEmbedCardExtension>()
         .UseAdvancedExtensions()
         .Build();
 
