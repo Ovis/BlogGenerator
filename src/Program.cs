@@ -3,6 +3,7 @@ using System.ServiceModel.Syndication;
 using System.Text;
 using System.Xml;
 using BlogGenerator.Enums;
+using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
 using Markdig.Extensions.Yaml;
@@ -402,13 +403,14 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
 
 
 
-static (string html, Frontmatter frontMatter) ParseMarkdownWithFrontmatter(string path, string basePath)
+(string html, Frontmatter frontMatter) ParseMarkdownWithFrontmatter(string path, string basePath)
 {
     var markdown = File.ReadAllText(path);
 
     // Markdig初期化
     var pipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
+        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
         .UseAdvancedExtensions()
         .Build();
 
