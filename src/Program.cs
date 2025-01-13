@@ -45,7 +45,7 @@ if (!Directory.Exists(outputDir))
 }
 
 // themeDirに渡されたフォルダパスから、 cshtmlファイル以外のファイル、フォルダをoutputDirにコピー
-foreach (var themeFile in Directory.GetFiles(themeDir, "*", SearchOption.AllDirectories).Where(x => !x.EndsWith(".cshtml")))
+foreach (var themeFile in Directory.GetFiles(themeDir, "*", SearchOption.AllDirectories).Where(x => !x.EndsWith(".cshtml") && !Path.GetFileName(x).StartsWith(".")))
 {
     var relativePath = Path.GetRelativePath(themeDir, themeFile);
     var outputPath = Path.Combine(outputDir, relativePath);
@@ -392,7 +392,7 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
 
     foreach (var fileInfo in directoryInfo.GetFiles("*", SearchOption.AllDirectories))
     {
-        if (fileInfo.FullName != filePath && Path.GetExtension(fileInfo.FullName) != ".md")
+        if (fileInfo.FullName != filePath && Path.GetExtension(fileInfo.FullName) != ".md" && !Path.GetFileName(fileInfo.FullName).StartsWith("."))
         {
             var targetFile = fileInfo.FullName.Replace(inputDir, outputDir);
             File.Copy(fileInfo.FullName, targetFile, true);
