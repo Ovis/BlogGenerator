@@ -1,0 +1,32 @@
+﻿@using RazorLight
+@using BlogGenerator.Models
+@inherits TemplatePage<PageModel>
+@{
+    var model = Model;
+    var article = model.Articles.First();
+
+    var tags = model.Articles.SelectMany(x => x.Tags).Distinct().ToArray()
+        .Select(tag => new
+        {
+            Tag = tag,
+            Count = model.Articles.Count(x => x.Tags.Contains(tag))
+        })
+        .OrderByDescending(r => r.Count)
+        .ToArray();
+}
+
+<article class="card mb-6">
+    <div class="card-content">
+        <div class="content">
+            @foreach (var tag in tags)
+            {
+                <a class="panel-block" href="@Model.GeneratePath($"/tags/{tag.Tag}")">
+                    <span class="panel-icon">
+                        <i class="fas fa-book" aria-hidden="true"></i>
+                    </span>
+                    <span>@tag.Tag (@tag.Count)</span>
+                </a>
+            }
+        </div>
+    </div>
+</article>

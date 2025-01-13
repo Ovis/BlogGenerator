@@ -1,0 +1,81 @@
+﻿@using System.IO
+@using RazorLight
+@using BlogGenerator.Models
+@inherits TemplatePage<PageModel>
+@{
+    var currentPage = Model.Pagination.CurrentPage;
+    var totalPages = Model.Pagination.TotalPages;
+    var maxPagesToShow = Model.Pagination.MaxPagesToShow;
+
+    var path = Model.Pagination.RelativeDirectoryPath;
+}
+
+@if (totalPages > 1)
+{
+    <nav class="pagination is-centered" role="navigation" aria-label="pagination">
+        <a class="btn btn-primary pagination-previous"
+           href="@((currentPage - 1) == 1 ? path : Path.Combine(path,$"{currentPage - 1}") )"
+           @(currentPage == 1 ? "disabled" : "") 
+           role="button" 
+           style="@(currentPage == 1 ? "pointer-events: none;" : "")">
+            <i class="fas fa-angle-double-left" aria-hidden="true"></i> Newer
+        </a>
+
+        <ul class="pagination-list">
+
+            @if (totalPages <= maxPagesToShow)
+            {
+                // 総ページ数が最大表示数以下の場合はすべて表示
+                for (int i = 1; i <= totalPages; i++)
+                {
+                    <li class="page-item">
+                        <a class="pagination-link @(i == currentPage ? "is-current" : "")" href="@(i == 1 ? path : Path.Combine(path, $"{i}"))">@i</a>
+                    </li>
+                }
+            }
+            else
+            {
+                // 最初のページ
+                <li class="page-item">
+                    <a class="pagination-link @( currentPage == 1 ? "is-current" : "")" href="@path">1</a>
+                </li>
+
+                // 「...」を表示するか判定
+                if (currentPage > 3)
+                {
+                    <li>
+                        <span class="pagination-ellipsis">…</span>
+                    </li>
+                }
+
+                // 中間のページを動的に表示
+                var startPage = Math.Max(2, currentPage - 1);
+                var endPage = Math.Min(totalPages - 1, currentPage + 1);
+
+                for (var i = startPage; i <= endPage; i++)
+                {
+                    <li class="page-item">
+                        <a class="pagination-link @(i == currentPage ? "is-current" : "")" href="@(Path.Combine(path, $"{i}"))">@i</a>
+                    </li>
+                }
+
+                // 「...」を表示するか判定
+                if (currentPage < totalPages - 2)
+                {
+                    <li>
+                        <span class="pagination-ellipsis">…</span>
+                    </li>
+                }
+
+                // 最後のページ
+                <li class="page-item">
+                    <a class="pagination-link @( currentPage == totalPages ? "is-current" : "")" href="@(Path.Combine(path, $"{totalPages}"))">@totalPages</a>
+                </li>
+            }
+        </ul>
+
+        <a class="btn btn-primary pagination-next" href="@(Path.Combine(path, $"{currentPage + 1}"))" @(currentPage == totalPages ? "disabled" : "") role="button" style="@(currentPage == totalPages ? "pointer-events: none;" : "")">
+            Older <i class="fas fa-angle-double-right" aria-hidden="true"></i>
+        </a>
+    </nav>
+}

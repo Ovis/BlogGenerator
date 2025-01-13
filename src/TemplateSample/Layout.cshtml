@@ -1,0 +1,153 @@
+@using System.IO
+@using BlogGenerator.Enums
+@using RazorLight
+@using BlogGenerator.Models
+@inherits TemplatePage<PageModel>
+@{
+    var model = Model;
+}
+
+<!DOCTYPE html>
+<html class="has-background-light" lang="ja">
+
+<head>
+    <title>@Model.SiteOption.SiteName</title>
+    <link type="application/rss+xml" rel="alternate" href="@Model.GeneratePath("feed.rss")">
+    <link type="application/atom+xml" rel="alternate" href="@Model.GeneratePath("feed.atom")">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="application-name" content="@Model.SiteOption.SiteName">
+    <meta property="og:title" content="@Model.SiteOption.SiteName">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="@Model.SiteOption.SiteUrl">
+    <link rel="shortcut icon" href="@Model.GeneratePath("favicon.ico")" type="image/x-icon">
+    <link rel="icon" href="@Model.GeneratePath("favicon.ico")" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.19.0/themes/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.19.0/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.19.0/plugins/autoloader/prism-autoloader.min.js" data-no-mirror></script>
+    <script src="https://cdn.jsdelivr.net/npm/quicklink@2.0.0/dist/quicklink.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.0.6/dist/medium-zoom.min.js"></script>
+    <script>
+        window.addEventListener("load", function() {
+        mediumZoom(document.querySelectorAll('div.content > p > img'), {
+        margin: 24,
+        background: '#292d3d',
+        scrollOffset: 0,
+        });
+        });
+    </script>
+    <link rel="stylesheet" href="@Model.GeneratePath("css/blog.css")">
+</head>
+
+<body>
+    <header>
+        <div class="container">
+            <nav class="navbar" role="navigation" aria-label="main navigation">
+                <div class="navbar-brand has-background-grey-lighter">
+                    <a aria-current="page" class="navbar-item" href="@Model.SiteOption.SiteUrl">
+                        <h1 class="title">@Model.SiteOption.SiteName</h1>
+                    </a>
+                    <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbar">
+                        <span aria-hidden="true">
+                        </span>
+                        <span aria-hidden="true">
+                        </span>
+                        <span aria-hidden="true">
+                        </span>
+                    </a>
+                </div>
+                <div class="navbar-menu has-background-grey-lighter" id="navbar">
+                    <div class="navbar-end">
+                        <a class="navbar-item" href="@Model.GeneratePath("/")">Home</a>
+                        <a class="navbar-item" href="@Model.GeneratePath("about")">About</a>
+                        <a class="navbar-item" href="@Model.GeneratePath("tags")">Tag</a>
+                    </div>
+                </div>
+            </nav>
+        </div>
+        <section class="section">
+            <div class="container has-text-centered">
+                <h1 class="title">
+                    <a href="@Model.GeneratePath(Model.SiteOption.SiteUrl)">@Model.SiteOption.SiteName</a>
+                </h1>
+                <p class="subtitle">@Model.SiteOption.SiteDescription</p>
+            </div>
+        </section>
+    </header>
+    <div class="section">
+        <div class="container">
+            <div class="columns">
+                <div class="column is-three-quarters">
+                    <main>
+                        @{
+                            @switch (model.PageType)
+                            {
+                                case PageType.Article:
+                                    await IncludeAsync("Content.cshtml", model);
+                                    break;
+                                case PageType.PageList:
+                                    await IncludeAsync("PageList.cshtml", model);
+                                    break;
+                                case PageType.Tag:
+                                    await IncludeAsync("Tag.cshtml", model);
+                                    break;
+                            }
+                        }
+                    </main>
+                </div>
+                <div class="column">
+                    @Raw(Model.SideBarHtml)
+                </div>
+            </div>
+        </div>
+    </div>
+    <footer>
+        <div class="container has-text-centered">
+            <div class="block">
+                <p class="mt-2 is-size-6">Copyright © 2024</p>
+            </div>
+        </div>
+    </footer>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js" crossorigin="anonymous"></script>
+    <script src="https://kit.fontawesome.com/*******.js" crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+                // Get all "navbar-burger" elements
+                const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
+
+                // Check if there are any navbar burgers
+                if ($navbarBurgers.length > 0) {
+
+                  // Add a click event on each of them
+                  $navbarBurgers.forEach( el => {
+                    el.addEventListener('click', () => {
+
+                      // Get the target from the "data-target" attribute
+                      const target = el.dataset.target;
+                      const $target = document.getElementById(target);
+
+                      // Toggle the "is-active" class on both the "navbar-burger" and the "navbar-menu"
+                      el.classList.toggle('is-active');
+                      $target.classList.toggle('is-active');
+
+                    });
+                  });
+                }
+
+              });
+    </script>
+    <script type="text/javascript" src="https://b.st-hatena.com/js/bookmark_button.js" charset="utf-8" async="async"></script>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+@*     <script async src="https://www.googletagmanager.com/gtag/js?id="></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+
+                gtag('config', '');
+    </script> *@
+</body>
+
+</html>
