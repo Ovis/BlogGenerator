@@ -5,21 +5,47 @@
 @inherits TemplatePage<PageModel>
 @{
     var model = Model;
+
+    var pageTitle = model.PageType switch
+    {
+        PageType.Article => $"{model.Articles.First().Title}",
+        _ => model.SiteOption.SiteName
+    };
+
+    var ogType = model.PageType switch
+    {
+        PageType.Article => "article",
+        _ => "blog"
+    };
+
+    var ogUrl = model.PageType switch
+    {
+        PageType.Article => model.GeneratePath(model.Articles.First().RootRelativePath),
+        _ => model.SiteOption.SiteUrl
+    };
+
+    var ogDescription = model.PageType switch
+    {
+        PageType.Article => model.Articles.First().Description,
+        _ => model.SiteOption.SiteDescription
+    };
 }
 
 <!DOCTYPE html>
 <html class="has-background-light" lang="ja">
 
 <head>
-    <title>@Model.SiteOption.SiteName</title>
+    <title>@pageTitle</title>
     <link type="application/rss+xml" rel="alternate" href="@Model.GeneratePath("feed.rss")">
     <link type="application/atom+xml" rel="alternate" href="@Model.GeneratePath("feed.atom")">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name="application-name" content="@Model.SiteOption.SiteName">
-    <meta property="og:title" content="@Model.SiteOption.SiteName">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="@Model.SiteOption.SiteUrl">
+    <meta property="og:title" content="@pageTitle">
+    <meta property="og:site_name" content="@Model.SiteOption.SiteName">
+    <meta property="og:type" content="@ogType">
+    <meta property="og:description" content="@ogDescription">
+    <meta property="og:url" content="@ogUrl">
     <link rel="shortcut icon" href="@Model.GeneratePath("favicon.ico")" type="image/x-icon">
     <link rel="icon" href="@Model.GeneratePath("favicon.ico")" type="image/x-icon">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
@@ -140,7 +166,7 @@
     </script>
     <script type="text/javascript" src="https://b.st-hatena.com/js/bookmark_button.js" charset="utf-8" async="async"></script>
     <!-- Global site tag (gtag.js) - Google Analytics -->
-@*     <script async src="https://www.googletagmanager.com/gtag/js?id="></script>
+    @*     <script async src="https://www.googletagmanager.com/gtag/js?id="></script>
     <script>
         window.dataLayer = window.dataLayer || [];
                 function gtag(){dataLayer.push(arguments);}
