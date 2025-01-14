@@ -1,4 +1,6 @@
-﻿namespace BlogGenerator.Models;
+﻿using static System.Text.RegularExpressions.Regex;
+
+namespace BlogGenerator.Models;
 
 public record Article(
     string FileName,
@@ -12,6 +14,15 @@ public record Article(
 {
     public string ExcerptHtml => Body.SplitHtml().excerptHtml;
     public string RemainingHtml => Body.SplitHtml().remainingHtml;
+
+    public string Description
+    {
+        get
+        {
+            var plainText = Replace(Body.SplitHtml().excerptHtml, "<.*?>", string.Empty);
+            return plainText.Length > 50 ? plainText[..50] + "..." : plainText;
+        }
+    }
 
     public string RootRelativePath => Path.Combine(RootRelativeDirectoryPath, FileName).Replace("\\", "/");
 }
