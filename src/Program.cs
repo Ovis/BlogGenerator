@@ -15,9 +15,9 @@ using YamlDotNet.Serialization;
 
 var sw = Stopwatch.StartNew();
 
-var inputDir = args[0];
-var outputDir = args[1];
-var themeDir = Path.Combine(Directory.GetCurrentDirectory(), "Templates");
+var inputDir = Path.GetFullPath(args[0]);
+var outputDir = Path.GetFullPath(args[1]);
+var themeDir = Path.GetFullPath(args[2]);
 
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -97,7 +97,7 @@ var articles = Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories)
 
 
 // サイドバーのHTML生成
-var sideBarHtml = await engine.CompileRenderAsync("Sidebar.cshtml", new SideBarModel
+var sideBarHtml = await engine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
 {
     SiteOption = siteOption,
     Articles = articles
