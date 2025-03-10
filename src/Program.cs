@@ -336,8 +336,8 @@ var yearMonthArticles = articles.GroupBy(x => x.Published.ToString("yyyy/MM"))
         Items = articles.Take(10).Select(article => new SyndicationItem(
             title: article.Title,
             content: article.ExcerptHtml,
-            itemAlternateLink: new Uri(siteOption.SiteUrl + "/" + article.RelativeDirectoryPath),
-            id: new Uri(siteOption.SiteUrl + "/" + article.RelativeDirectoryPath).ToString(),
+            itemAlternateLink: new Uri($"{siteOption.SiteUrl.TrimEnd('/')}/{article.RelativeDirectoryPath.TrimEnd('/')}/{article.FileName}"),
+            id: new Uri($"{siteOption.SiteUrl.TrimEnd('/')}/{article.RelativeDirectoryPath.TrimEnd('/')}/{article.FileName}").ToString(),
             lastUpdatedTime: article.Published
         ))
     };
