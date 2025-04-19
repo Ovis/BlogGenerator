@@ -3,6 +3,7 @@ using System.ServiceModel.Syndication;
 using System.Text;
 using System.Xml;
 using BlogGenerator.Enums;
+using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
 using Markdig.Extensions.Yaml;
@@ -14,9 +15,9 @@ using YamlDotNet.Serialization;
 
 var sw = Stopwatch.StartNew();
 
-var inputDir = args[0];
-var outputDir = args[1];
-var themeDir = Path.Combine(Directory.GetCurrentDirectory(), "Templates");
+var inputDir = Path.GetFullPath(args[0]);
+var outputDir = Path.GetFullPath(args[1]);
+var themeDir = Path.GetFullPath(args[2]);
 
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -29,6 +30,9 @@ if (siteOption == null)
 {
     throw new ArgumentNullException($"{nameof(SiteOption)} is not found in appsettings.json");
 }
+
+// 文字エンコーディング
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 // RazorLightエンジンの初期化
 var engine = new RazorLightEngineBuilder()
@@ -93,7 +97,7 @@ var articles = Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories)
 
 
 // サイドバーのHTML生成
-var sideBarHtml = await engine.CompileRenderAsync("Sidebar.cshtml", new SideBarModel
+var sideBarHtml = await engine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
 {
     SiteOption = siteOption,
     Articles = articles
@@ -332,8 +336,8 @@ var yearMonthArticles = articles.GroupBy(x => x.Published.ToString("yyyy/MM"))
         Items = articles.Take(10).Select(article => new SyndicationItem(
             title: article.Title,
             content: article.ExcerptHtml,
-            itemAlternateLink: new Uri(siteOption.SiteUrl + "/" + article.RelativeDirectoryPath),
-            id: new Uri(siteOption.SiteUrl + "/" + article.RelativeDirectoryPath).ToString(),
+            itemAlternateLink: new Uri($"{siteOption.SiteUrl.TrimEnd('/')}/{article.RelativeDirectoryPath.TrimEnd('/')}/{article.FileName}"),
+            id: new Uri($"{siteOption.SiteUrl.TrimEnd('/')}/{article.RelativeDirectoryPath.TrimEnd('/')}/{article.FileName}").ToString(),
             lastUpdatedTime: article.Published
         ))
     };
@@ -402,13 +406,15 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
 
 
 
-static (string html, Frontmatter frontMatter) ParseMarkdownWithFrontmatter(string path, string basePath)
+(string html, Frontmatter frontMatter) ParseMarkdownWithFrontmatter(string path, string basePath)
 {
     var markdown = File.ReadAllText(path);
 
     // Markdig初期化
     var pipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
+        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
+        .Use<OEmbedCardExtension>()
         .UseAdvancedExtensions()
         .Build();
 
