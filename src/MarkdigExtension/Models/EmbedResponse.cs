@@ -31,7 +31,7 @@ namespace BlogGenerator.MarkdigExtension.Models
         public string ProviderName { get; set; } = string.Empty;
 
         [JsonPropertyName("provider_url")]
-        [XmlElement("providerprovider_url_name")]
+        [XmlElement("provider_url")]
         public string ProviderUrl { get; set; } = string.Empty;
 
         [JsonPropertyName("cache_age")]
