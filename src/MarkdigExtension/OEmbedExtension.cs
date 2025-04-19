@@ -27,6 +27,8 @@ public class OEmbedCardExtension : IMarkdownExtension
     private static List<OEmbedProviderJson> _oEmbedProvidersJson = new();
     private static readonly Dictionary<string, List<string>> OembedProviderDic = new();
 
+    public static OEmbedCardParser oEmbedCardParser { get; set; }
+
     public void Setup(MarkdownPipelineBuilder pipeline)
     {
         lock (LockObject)
@@ -42,12 +44,14 @@ public class OEmbedCardExtension : IMarkdownExtension
                 // 一番最初に呼ばれた場合だけ実行されるロジック
                 GetOEmbedProvidersJson().GetAwaiter().GetResult();
                 _isFirstCall = false;
+
+                oEmbedCardParser = new OEmbedCardParser(_oEmbedProvidersJson, OembedProviderDic, HttpClient);
             }
         }
 
         if (!pipeline.InlineParsers.Contains<OEmbedCardParser>())
         {
-            pipeline.InlineParsers.Insert(0, new OEmbedCardParser(_oEmbedProvidersJson, OembedProviderDic, HttpClient));
+            pipeline.InlineParsers.Insert(0, oEmbedCardParser);
         }
     }
 
@@ -125,6 +129,46 @@ public class OEmbedCardExtension : IMarkdownExtension
 
         return (false, string.Empty, string.Empty, null);
     }
+
+    // キャッシュをJSONファイルに保存するメソッド
+    public static async Task SaveOEmbedCacheAsync(string filePath)
+    {
+        try
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var json = JsonSerializer.Serialize(OEmbedCardParser.OEmbedCache, options);
+            await File.WriteAllTextAsync(filePath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving OEmbed cache: {ex.Message}");
+        }
+    }
+
+    // JSONファイルからキャッシュを読み込むメソッド
+    public static async Task LoadOEmbedCacheAsync(string filePath)
+    {
+        if (!File.Exists(filePath))
+            return;
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(filePath);
+            var loadedCache = JsonSerializer.Deserialize<ConcurrentDictionary<string, string>>(json);
+
+            if (loadedCache != null)
+            {
+                foreach (var item in loadedCache)
+                {
+                    OEmbedCardParser.OEmbedCache.TryAdd(item.Key, item.Value);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading OEmbed cache: {ex.Message}");
+        }
+    }
 }
 
 public class OEmbedCardParser : InlineParser
@@ -133,6 +177,9 @@ public class OEmbedCardParser : InlineParser
     private static Dictionary<string, List<string>> _oembedProviderDic = new();
     private static HttpClient _httpClient = new();
     private static ConcurrentDictionary<string, string> _oEmbedCache = new();
+
+    // OEmbedCacheをパブリックプロパティとして公開
+    public static ConcurrentDictionary<string, string> OEmbedCache => _oEmbedCache;
 
     public OEmbedCardParser(List<OEmbedProviderJson> oEmbedProvidersJson, Dictionary<string, List<string>> oEmbedProviderDic, HttpClient httpClient)
     {

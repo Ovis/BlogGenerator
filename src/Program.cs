@@ -18,6 +18,7 @@ var sw = Stopwatch.StartNew();
 var inputDir = Path.GetFullPath(args[0]);
 var outputDir = Path.GetFullPath(args[1]);
 var themeDir = Path.GetFullPath(args[2]);
+var oEmbedDir = string.IsNullOrEmpty(args[3]) ? string.Empty : Path.GetFullPath(args[3]);
 
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -35,11 +36,29 @@ if (siteOption == null)
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 // RazorLightエンジンの初期化
-var engine = new RazorLightEngineBuilder()
+var razorLightEngine = new RazorLightEngineBuilder()
     .UseFileSystemProject(themeDir)
     .UseMemoryCachingProvider()
     .DisableEncoding()
     .Build();
+
+// Markdig初期化
+MarkdownPipeline markDigPipeline;
+{
+    markDigPipeline = new MarkdownPipelineBuilder()
+        .UseYamlFrontMatter()
+        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
+        .Use<OEmbedCardExtension>()
+        .UseAdvancedExtensions()
+        .Build();
+
+    if (!string.IsNullOrEmpty(oEmbedDir))
+    {
+        await OEmbedCardExtension.LoadOEmbedCacheAsync(oEmbedDir);
+    }
+}
+
+
 
 
 // 出力先が存在しない場合は、フォルダを作成
@@ -94,10 +113,13 @@ var articles = Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories)
     .OrderByDescending(x => x.Published)
     .ToList();
 
-
+if (!string.IsNullOrEmpty(oEmbedDir))
+{
+    await OEmbedCardExtension.SaveOEmbedCacheAsync(oEmbedDir);
+}
 
 // サイドバーのHTML生成
-var sideBarHtml = await engine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
+var sideBarHtml = await razorLightEngine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
 {
     SiteOption = siteOption,
     Articles = articles
@@ -125,11 +147,11 @@ foreach (var article in articles)
     };
 
     // HTMLファイルを生成
-    var cacheResult = engine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+    var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
 
     var result = cacheResult.Success
-        ? await engine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
-        : await engine.CompileRenderAsync("Layout.cshtml", model);
+        ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
+        : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
 
     await File.WriteAllTextAsync(outputFilePathWithoutExtension, result, Encoding.UTF8);
 }
@@ -166,11 +188,11 @@ foreach (var article in articles)
             }
         };
 
-        var cacheResult = engine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+        var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
 
         var result = cacheResult.Success
-            ? await engine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
-            : await engine.CompileRenderAsync("Layout.cshtml", model);
+            ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
+            : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
 
         await File.WriteAllTextAsync(outputFilePath, result, Encoding.UTF8);
         pageIndex++;
@@ -224,11 +246,11 @@ var tagArticles = articles.SelectMany(x => x.Tags).Distinct().Select(tag => new
                 }
             };
 
-            var cacheResult = engine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+            var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
 
             var result = cacheResult.Success
-                ? await engine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
-                : await engine.CompileRenderAsync("Layout.cshtml", model);
+                ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
+                : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
 
             await File.WriteAllTextAsync(outputFilePath, result, Encoding.UTF8);
             pageIndex++;
@@ -288,11 +310,11 @@ var yearMonthArticles = articles.GroupBy(x => x.Published.ToString("yyyy/MM"))
                 }
             };
 
-            var cacheResult = engine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+            var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
 
             var result = cacheResult.Success
-                ? await engine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
-                : await engine.CompileRenderAsync("Layout.cshtml", model);
+                ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
+                : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
 
             await File.WriteAllTextAsync(outputFilePath, result, Encoding.UTF8);
             pageIndex++;
@@ -315,10 +337,10 @@ var yearMonthArticles = articles.GroupBy(x => x.Published.ToString("yyyy/MM"))
         SideBarHtml = sideBarHtml,
         Articles = articles,
     };
-    var cacheResult = engine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+    var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
     var result = cacheResult.Success
-        ? await engine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
-        : await engine.CompileRenderAsync("Layout.cshtml", model);
+        ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
+        : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
     await File.WriteAllTextAsync(outputFilePath, result, Encoding.UTF8);
 }
 
@@ -410,20 +432,12 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
 {
     var markdown = File.ReadAllText(path);
 
-    // Markdig初期化
-    var pipeline = new MarkdownPipelineBuilder()
-        .UseYamlFrontMatter()
-        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
-        .Use<OEmbedCardExtension>()
-        .UseAdvancedExtensions()
-        .Build();
-
     var writer = new StringWriter();
     var renderer = new HtmlRenderer(writer);
-    pipeline.Setup(renderer);
+    markDigPipeline.Setup(renderer);
 
 
-    var document = Markdown.Parse(markdown, pipeline);
+    var document = Markdown.Parse(markdown, markDigPipeline);
     var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
 
     var frontMatter = new Frontmatter();
@@ -443,7 +457,7 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
         markdownContent = markdown[(yamlEndIndex + 1)..].TrimStart();
     }
 
-    var markdownDocument = Markdown.Parse(markdownContent, pipeline);
+    var markdownDocument = Markdown.Parse(markdownContent, markDigPipeline);
 
     // 画像パスを置換
     foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
