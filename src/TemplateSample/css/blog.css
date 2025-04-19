@@ -3,6 +3,7 @@ a {
 	-webkit-transition: all 0.2s;
 	-moz-transition: all 0.2s;
 	transition: all 0.2s;
+	word-wrap:break-word;
 }
 
 a:focus, a:hover {
