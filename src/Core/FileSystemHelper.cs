@@ -1,6 +1,8 @@
-﻿namespace BlogGenerator.Core;
+﻿using BlogGenerator.Core.Interfaces;
 
-public class FileSystemHelper
+namespace BlogGenerator.Core;
+
+public class FileSystemHelper : IFileSystemHelper
 {
     public void EnsureDirectoryExists(string path)
     {

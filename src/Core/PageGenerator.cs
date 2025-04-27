@@ -1,17 +1,18 @@
-﻿using BlogGenerator.Enums;
+﻿using BlogGenerator.Core.Interfaces;
+using BlogGenerator.Enums;
 using BlogGenerator.Models;
 using RazorLight;
 using System.Text;
 
 namespace BlogGenerator.Core;
 
-public class PageGenerator
+public class PageGenerator : IPageGenerator
 {
     private readonly RazorLightEngine _razorLightEngine;
     private readonly SiteOption _siteOption;
-    private readonly FileSystemHelper _fileSystemHelper;
+    private readonly IFileSystemHelper _fileSystemHelper;
 
-    public PageGenerator(RazorLightEngine razorLightEngine, SiteOption siteOption, FileSystemHelper fileSystemHelper)
+    public PageGenerator(RazorLightEngine razorLightEngine, SiteOption siteOption, IFileSystemHelper fileSystemHelper)
     {
         _razorLightEngine = razorLightEngine;
         _siteOption = siteOption;
@@ -35,10 +36,7 @@ public class PageGenerator
             var outputFilePathWithoutExtension = Path.Combine(outputDir, article.RelativeDirectoryPath, article.FileName);
             // 出力フォルダパス
             var outputDirPath = Path.GetDirectoryName(outputFilePathWithoutExtension);
-            if (!Directory.Exists(outputDirPath))
-            {
-                Directory.CreateDirectory(outputDirPath!);
-            }
+            _fileSystemHelper.EnsureDirectoryExists(outputDirPath!);
 
             var model = new PageModel
             {

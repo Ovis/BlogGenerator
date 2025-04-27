@@ -2,9 +2,11 @@
 using System.Diagnostics;
 using System.Text;
 using BlogGenerator.Core;
+using BlogGenerator.Core.Interfaces;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using RazorLight;
 
 namespace BlogGenerator;
@@ -37,22 +39,20 @@ public class Program
             // 文字エンコーディング
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-            // RazorLightエンジンの初期化
-            var razorLightEngine = new RazorLightEngineBuilder()
-                .UseFileSystemProject(theme.FullName)
-                .UseMemoryCachingProvider()
-                .DisableEncoding()
-                .Build();
+            // DIコンテナの設定
+            var serviceProvider = ConfigureServices(siteOption, theme.FullName, oEmbedDir);
 
-            // Markdownプロセッサーの初期化
-            var markdownProcessor = new MarkdownProcessor(siteOption, oEmbedDir);
+            // RazorLightエンジンの取得
+            var razorLightEngine = serviceProvider.GetRequiredService<RazorLightEngine>();
+
+            // 各種サービスの取得
+            var markdownProcessor = serviceProvider.GetRequiredService<IMarkdownProcessor>();
+            var themeProcessor = serviceProvider.GetRequiredService<IThemeProcessor>();
+            var fileSystemHelper = serviceProvider.GetRequiredService<IFileSystemHelper>();
+            var pageGenerator = serviceProvider.GetRequiredService<IPageGenerator>();
+            var rssFeedGenerator = serviceProvider.GetRequiredService<IRssFeedGenerator>();
+
             await markdownProcessor.InitializeAsync();
-
-            // テーマプロセッサーの初期化
-            var themeProcessor = new ThemeProcessor();
-
-            // ファイルシステムヘルパーの初期化
-            var fileSystemHelper = new FileSystemHelper();
 
             // 出力先の準備
             fileSystemHelper.EnsureDirectoryExists(output.FullName);
@@ -66,9 +66,6 @@ public class Program
                 output.FullName,
                 siteOption.BaseAbsolutePath);
 
-            // ページ生成機能の初期化
-            var pageGenerator = new PageGenerator(razorLightEngine, siteOption, fileSystemHelper);
-
             // サイドバーのHTML生成
             var sideBarHtml = await pageGenerator.GenerateSideBarHtmlAsync(articles);
 
@@ -79,7 +76,6 @@ public class Program
             await pageGenerator.GenerateArchivePagesAsync(articles, output.FullName, sideBarHtml);
 
             // RSSフィード生成
-            var rssFeedGenerator = new RssFeedGenerator(siteOption);
             await rssFeedGenerator.GenerateRssAndAtomFeedsAsync(articles, output.FullName);
 
             // oEmbedキャッシュの保存
@@ -92,5 +88,35 @@ public class Program
         }, commandLineSetup.InputOption, commandLineSetup.OutputOption, commandLineSetup.ThemeOption, commandLineSetup.OEmbedOption);
 
         return await rootCommand.InvokeAsync(args);
+    }
+
+    private static IServiceProvider ConfigureServices(SiteOption siteOption, string themePath, string? oEmbedDir)
+    {
+        var services = new ServiceCollection();
+
+        // RazorLightEngineの登録
+        services.AddSingleton<RazorLightEngine>(sp =>
+        {
+            return new RazorLightEngineBuilder()
+                .UseFileSystemProject(themePath)
+                .UseMemoryCachingProvider()
+                .DisableEncoding()
+                .Build();
+        });
+
+        // サイトオプションの登録
+        services.AddSingleton(siteOption);
+
+        // oEmbedDirの登録
+        services.AddSingleton(provider => oEmbedDir);
+
+        // 各サービスの登録
+        services.AddSingleton<IFileSystemHelper, FileSystemHelper>();
+        services.AddSingleton<IThemeProcessor, ThemeProcessor>();
+        services.AddSingleton<IMarkdownProcessor, MarkdownProcessor>();
+        services.AddSingleton<IPageGenerator, PageGenerator>();
+        services.AddSingleton<IRssFeedGenerator, RssFeedGenerator>();
+
+        return services.BuildServiceProvider();
     }
 }

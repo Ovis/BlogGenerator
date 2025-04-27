@@ -1,9 +1,9 @@
-﻿namespace BlogGenerator.Core;
+﻿using BlogGenerator.Core.Interfaces;
 
-public class ThemeProcessor
+namespace BlogGenerator.Core;
+
+public class ThemeProcessor(IFileSystemHelper fileSystemHelper) : IThemeProcessor
 {
-    private readonly FileSystemHelper _fileSystemHelper = new();
-
     public void CopyThemeFilesToOutput(string themeDir, string outputDir)
     {
         // themeDirに渡されたフォルダパスから、cshtmlファイル以外のファイル、フォルダをoutputDirにコピー
@@ -14,10 +14,7 @@ public class ThemeProcessor
             var outputPath = Path.Combine(outputDir, relativePath);
 
             var outputDirPath = Path.GetDirectoryName(outputPath);
-            if (!Directory.Exists(outputDirPath))
-            {
-                Directory.CreateDirectory(outputDirPath!);
-            }
+            fileSystemHelper.EnsureDirectoryExists(outputDirPath!);
 
             File.Copy(themeFile, outputPath, true);
         }

@@ -1,4 +1,5 @@
-﻿using BlogGenerator.MarkdigExtension;
+﻿using BlogGenerator.Core.Interfaces;
+using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
 using Markdig.Extensions.Yaml;
@@ -8,31 +9,23 @@ using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
-public class MarkdownProcessor
+public class MarkdownProcessor(SiteOption siteOption, string? oEmbedDir, IFileSystemHelper fileSystemHelper)
+    : IMarkdownProcessor
 {
-    private readonly SiteOption _siteOption;
-    private readonly string? _oEmbedDir;
-    private MarkdownPipeline _markdownPipeline;
-    private readonly FileSystemHelper _fileSystemHelper = new();
+    private readonly SiteOption _siteOption = siteOption;
 
-    public MarkdownProcessor(SiteOption siteOption, string? oEmbedDir)
-    {
-        _siteOption = siteOption;
-        _oEmbedDir = oEmbedDir;
-
-        _markdownPipeline = new MarkdownPipelineBuilder()
-            .UseYamlFrontMatter()
-            .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
-            .Use<OEmbedCardExtension>()
-            .UseAdvancedExtensions()
-            .Build();
-    }
+    private MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
+        .UseYamlFrontMatter()
+        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
+        .Use<OEmbedCardExtension>()
+        .UseAdvancedExtensions()
+        .Build();
 
     public async Task InitializeAsync()
     {
-        if (!string.IsNullOrEmpty(_oEmbedDir))
+        if (!string.IsNullOrEmpty(oEmbedDir))
         {
-            await OEmbedCardExtension.LoadOEmbedCacheAsync(_oEmbedDir);
+            await OEmbedCardExtension.LoadOEmbedCacheAsync(oEmbedDir);
         }
     }
 
@@ -58,7 +51,7 @@ public class MarkdownProcessor
         var (html, frontMatter) = ParseMarkdownWithFrontmatter(filePath, routeRelativePath);
 
         // コンテンツ系ファイルはMarkdownファイルを除いてそのままコピー
-        _fileSystemHelper.CopyContentFile(inputDir, outputDir, filePath);
+        fileSystemHelper.CopyContentFile(inputDir, outputDir, filePath);
 
         return new Article(
             FileName: Path.ChangeExtension(Path.GetFileNameWithoutExtension(filePath), ".html"),
