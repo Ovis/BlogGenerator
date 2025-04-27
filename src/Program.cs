@@ -451,7 +451,32 @@ static void CopyContentFile(string inputDir, string outputDir, string filePath)
         if (fileInfo.FullName != filePath && Path.GetExtension(fileInfo.FullName) != ".md" && !Path.GetFileName(fileInfo.FullName).StartsWith("."))
         {
             var targetFile = fileInfo.FullName.Replace(inputDir, outputDir);
-            File.Copy(fileInfo.FullName, targetFile, true);
+
+            const int maxRetries = 3;
+            const int delayMilliseconds = 3000;
+            var attempt = 0;
+            var success = false;
+
+            while (!success)
+            {
+                try
+                {
+                    File.Copy(fileInfo.FullName, targetFile, true);
+                    success = true;
+                }
+                catch (IOException ex) when (ex.Message.Contains("being used by another process"))
+                {
+                    attempt++;
+                    if (attempt < maxRetries)
+                    {
+                        Thread.Sleep(delayMilliseconds);
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+            }
         }
     }
 }
