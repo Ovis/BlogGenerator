@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.Diagnostics;
 using System.Text;
 using BlogGenerator.Core;
@@ -104,9 +104,6 @@ public class Program
 
             Console.WriteLine($"[Completed] Dependency Injection Setup: {sw.Elapsed}");
 
-            // RazorLightエンジンの取得
-            var razorLightEngine = serviceProvider.GetRequiredService<RazorLightEngine>();
-
             // 各種サービスの取得
             var markdownProcessor = serviceProvider.GetRequiredService<IMarkdownProcessor>();
             var themeProcessor = serviceProvider.GetRequiredService<IThemeProcessor>();
@@ -178,20 +175,17 @@ public class Program
         var services = new ServiceCollection();
 
         // RazorLightEngineの登録
-        services.AddSingleton<RazorLightEngine>(sp =>
-        {
-            return new RazorLightEngineBuilder()
-                .UseFileSystemProject(themePath)
-                .UseMemoryCachingProvider()
-                .DisableEncoding()
-                .Build();
-        });
+        services.AddSingleton<RazorLightEngine>(_ => new RazorLightEngineBuilder()
+            .UseFileSystemProject(themePath)
+            .UseMemoryCachingProvider()
+            .DisableEncoding()
+            .Build());
 
         // サイトオプションの登録
         services.AddSingleton(siteOption);
 
         // oEmbedDirの登録
-        services.AddSingleton(provider => oEmbedDir);
+        services.AddSingleton(_ => oEmbedDir ?? string.Empty);
 
         // 各サービスの登録
         services.AddSingleton<IFileSystemHelper, FileSystemHelper>();
