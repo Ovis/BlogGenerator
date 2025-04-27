@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.Diagnostics;
 using System.Text;
 using BlogGenerator.Core;
@@ -23,24 +23,78 @@ public class Program
         var commandLineSetup = new CommandLineSetup();
         var rootCommand = commandLineSetup.CreateRootCommand();
 
-        rootCommand.SetHandler(async (input, output, theme, oEmbedDir) =>
+        rootCommand.SetHandler(async (input, output, theme, oEmbedDir, configFile) =>
         {
             Console.WriteLine($"[Start] Command Line Setup: {sw.Elapsed}");
 
-            // 設定の読み込み
-            var configuration = new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
-                .Build();
+            // 設定の読み込み（優先度順に適用）
+            var configBuilder = new ConfigurationBuilder();
+
+            // 1. ユーザーホームディレクトリの設定ファイル（最も低い優先度）
+            var userConfigPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".bloggen",
+                "config.json");
+
+            if (File.Exists(userConfigPath))
+            {
+                configBuilder.AddJsonFile(userConfigPath, optional: true, reloadOnChange: true);
+                Console.WriteLine($"User config loaded from: {userConfigPath}");
+            }
+
+            // 2. カレントディレクトリのappsettings.json
+            if (File.Exists("appsettings.json"))
+            {
+                configBuilder.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+            }
+
+            if (File.Exists("appsettings.Development.json"))
+            {
+                configBuilder.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
+            }
+
+            // 3. 指定された設定ファイル（configオプションで指定）
+            if (configFile is { Exists: true })
+            {
+                configBuilder.AddJsonFile(configFile.FullName, optional: false, reloadOnChange: true);
+                Console.WriteLine($"Config file loaded from: {configFile.FullName}");
+            }
+
+            // 4. 環境変数（最も高い優先度）
+            configBuilder.AddEnvironmentVariables("BLOGGEN_");
+
+            var configuration = configBuilder.Build();
+
+            // サイトオプションの作成と優先順位付き初期化
+            var siteOption = configuration.GetSection("SiteOption").Get<SiteOption>() ?? new SiteOption();
+
+            // 設定ファイルから取得できなかった場合に個別の環境変数から直接取得
+            if (string.IsNullOrEmpty(siteOption.SiteName))
+                siteOption.SiteName = Environment.GetEnvironmentVariable("BLOGGEN_SITENAME") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteUrl))
+                siteOption.SiteUrl = Environment.GetEnvironmentVariable("BLOGGEN_SITEURL") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteDescription))
+                siteOption.SiteDescription = Environment.GetEnvironmentVariable("BLOGGEN_SITEDESCRIPTION") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteAuthor))
+                siteOption.SiteAuthor = Environment.GetEnvironmentVariable("BLOGGEN_SITEAUTHOR") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteAuthorDescription))
+                siteOption.SiteAuthorDescription = Environment.GetEnvironmentVariable("BLOGGEN_SITEAUTHORDESCRIPTION") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.AmazonAssociateTag))
+                siteOption.AmazonAssociateTag = Environment.GetEnvironmentVariable("BLOGGEN_AMAZONTAG") ?? string.Empty;
+
+            // 必須項目のバリデーション
+            if (string.IsNullOrEmpty(siteOption.SiteUrl))
+            {
+                throw new ArgumentException("SiteUrl is a required field. Please specify it via environment variables or a configuration file.");
+            }
 
             Console.WriteLine($"[Completed] Configuration Loading: {sw.Elapsed}");
 
-            var siteOption = configuration.GetSection("SiteOption").Get<SiteOption>();
-
-            if (siteOption == null)
-            {
-                throw new ArgumentNullException($"{nameof(SiteOption)} is not found");
-            }
 
             // 文字エンコーディング
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -109,7 +163,12 @@ public class Program
             Console.WriteLine($"[Completed] oEmbed Cache Save: {sw.Elapsed}");
 
             Console.WriteLine("Completed: " + sw.Elapsed);
-        }, commandLineSetup.InputOption, commandLineSetup.OutputOption, commandLineSetup.ThemeOption, commandLineSetup.OEmbedOption);
+        },
+        commandLineSetup.InputOption,
+        commandLineSetup.OutputOption,
+        commandLineSetup.ThemeOption,
+        commandLineSetup.OEmbedOption,
+        commandLineSetup.ConfigOption);
 
         return await rootCommand.InvokeAsync(args);
     }

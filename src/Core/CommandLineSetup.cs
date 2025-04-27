@@ -16,7 +16,7 @@ public class CommandLineSetup
 
     public Option<DirectoryInfo> ThemeOption { get; } = new(
             aliases: ["/theme", "--theme"],
-            description: "出力フォルダー")
+            description: "テーマフォルダー")
     { IsRequired = true };
 
     public Option<string> OEmbedOption { get; } = new(
@@ -24,14 +24,25 @@ public class CommandLineSetup
             description: "oEmbedキャッシュファイル")
     { IsRequired = false };
 
+    // 設定ファイル指定オプション
+    public Option<FileInfo> ConfigOption { get; } = new(
+            aliases: ["/config", "--config", "-c"],
+            description: "設定ファイルのパス")
+    { IsRequired = false };
+
     public RootCommand CreateRootCommand()
     {
-        return new RootCommand("Markdown to HTML generator")
-        {
-            InputOption,
-            OutputOption,
-            ThemeOption,
-            OEmbedOption
-        };
+        var rootCommand = new RootCommand("Markdown to HTML generator");
+
+        // 既存オプション
+        rootCommand.AddOption(InputOption);
+        rootCommand.AddOption(OutputOption);
+        rootCommand.AddOption(ThemeOption);
+        rootCommand.AddOption(OEmbedOption);
+
+        // 設定ファイルオプション
+        rootCommand.AddOption(ConfigOption);
+
+        return rootCommand;
     }
 }
