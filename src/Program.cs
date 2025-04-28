@@ -68,7 +68,10 @@ public class Program
             // サイトオプションの作成と優先順位付き初期化
             var siteOption = configuration.GetSection("SiteOption").Get<SiteOption>() ?? new SiteOption();
 
-            // 設定ファイルから取得できなかった場合に個別の環境変数から直接取得
+            // フィードオプションの作成と優先順位付き初期化
+            var feedOption = configuration.GetSection("FeedOption").Get<FeedOption>() ?? new FeedOption();
+
+            // サイトオプション：設定ファイルから取得できなかった場合に個別の環境変数から直接取得
             if (string.IsNullOrEmpty(siteOption.SiteName))
                 siteOption.SiteName = Environment.GetEnvironmentVariable("BLOGGEN_SITENAME") ?? string.Empty;
 
@@ -87,6 +90,31 @@ public class Program
             if (string.IsNullOrEmpty(siteOption.AmazonAssociateTag))
                 siteOption.AmazonAssociateTag = Environment.GetEnvironmentVariable("BLOGGEN_AMAZONTAG") ?? string.Empty;
 
+            // フィードオプション：設定ファイルから取得できなかった場合に個別の環境変数から直接取得
+            var useRss2Str = Environment.GetEnvironmentVariable("BLOGGEN_FEED_USERSS2");
+            if (!string.IsNullOrEmpty(useRss2Str) && bool.TryParse(useRss2Str, out bool useRss2))
+                feedOption.UseRss2 = useRss2;
+
+            var useAtomStr = Environment.GetEnvironmentVariable("BLOGGEN_FEED_USEATOM");
+            if (!string.IsNullOrEmpty(useAtomStr) && bool.TryParse(useAtomStr, out bool useAtom))
+                feedOption.UseAtom = useAtom;
+
+            var rssFileName = Environment.GetEnvironmentVariable("BLOGGEN_FEED_RSSFILENAME");
+            if (!string.IsNullOrEmpty(rssFileName))
+                feedOption.RssFileName = rssFileName;
+
+            var atomFileName = Environment.GetEnvironmentVariable("BLOGGEN_FEED_ATOMFILENAME");
+            if (!string.IsNullOrEmpty(atomFileName))
+                feedOption.AtomFileName = atomFileName;
+
+            var maxItemsStr = Environment.GetEnvironmentVariable("BLOGGEN_FEED_MAXITEMS");
+            if (!string.IsNullOrEmpty(maxItemsStr) && int.TryParse(maxItemsStr, out int maxItems))
+                feedOption.MaxFeedItems = maxItems;
+
+            var language = Environment.GetEnvironmentVariable("BLOGGEN_FEED_LANGUAGE");
+            if (!string.IsNullOrEmpty(language))
+                feedOption.Language = language;
+
             // 必須項目のバリデーション
             if (string.IsNullOrEmpty(siteOption.SiteUrl))
             {
@@ -95,12 +123,11 @@ public class Program
 
             Console.WriteLine($"[Completed] Configuration Loading: {sw.Elapsed}");
 
-
             // 文字エンコーディング
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             // DIコンテナの設定
-            var serviceProvider = ConfigureServices(siteOption, theme.FullName, oEmbedDir);
+            var serviceProvider = ConfigureServices(siteOption, feedOption, theme.FullName, oEmbedDir);
 
             Console.WriteLine($"[Completed] Dependency Injection Setup: {sw.Elapsed}");
 
@@ -170,7 +197,7 @@ public class Program
         return await rootCommand.InvokeAsync(args);
     }
 
-    private static IServiceProvider ConfigureServices(SiteOption siteOption, string themePath, string? oEmbedDir)
+    private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir)
     {
         var services = new ServiceCollection();
 
@@ -183,6 +210,9 @@ public class Program
 
         // サイトオプションの登録
         services.AddSingleton(siteOption);
+
+        // フィードオプションの登録
+        services.AddSingleton(feedOption);
 
         // oEmbedDirの登録
         services.AddSingleton(_ => oEmbedDir ?? string.Empty);
