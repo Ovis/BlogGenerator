@@ -1,0 +1,55 @@
+name: Publish BlogGenerator
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Update csproj Version
+        run: |
+          sed -i "s|<Version>.*</Version>|<Version>${{ env.VERSION }}</Version>|g" ./BlogGenerator/BlogGenerator.csproj
+
+      - name: Pack NuGet package
+        run: dotnet pack ./BlogGenerator/BlogGenerator.csproj --configuration Release --output ./artifacts/nuget
+
+      - name: Publish executable
+        run: dotnet publish ./BlogGenerator/BlogGenerator.csproj --configuration Release --output ./artifacts/publish
+
+      - name: Create publish ZIP archive
+        run: |
+          cd ./artifacts/publish
+          zip -r ../BlogGenerator-v${{ env.VERSION }}.zip .
+
+      - name: Create template ZIP archive
+        run: |
+          cd ./BlogGenerator
+          zip -r ../artifacts/BlogGenerator-Templates-v${{ env.VERSION }}.zip Template
+
+      - name: Push to NuGet
+        run: dotnet nuget push ./artifacts/nuget/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./artifacts/nuget/*.nupkg
+            ./artifacts/BlogGenerator-v${{ env.VERSION }}.zip
+            ./artifacts/BlogGenerator-Templates-v${{ env.VERSION }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
