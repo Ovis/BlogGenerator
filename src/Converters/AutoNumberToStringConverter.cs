@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace BlogGenerator.Converters;
@@ -15,11 +16,11 @@ public class AutoNumberToStringConverter : JsonConverter<object>
         {
             return reader.TryGetInt64(out long l) ?
                 l.ToString() :
-                reader.GetDouble().ToString();
+                reader.GetDouble().ToString(CultureInfo.InvariantCulture);
         }
         if (reader.TokenType == JsonTokenType.String)
         {
-            return reader.GetString();
+            return reader.GetString() ?? string.Empty;
         }
 
         using JsonDocument document = JsonDocument.ParseValue(ref reader);
