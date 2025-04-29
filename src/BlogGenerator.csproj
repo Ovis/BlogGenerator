@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
@@ -6,6 +6,16 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PreserveCompilationContext>true</PreserveCompilationContext>
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>bloggen</ToolCommandName>
+		<PackageId>eSheepDev.BlogGenerator</PackageId>
+		<Version>0.0.1.0</Version>
+		<PackageOutputPath>./nupkg</PackageOutputPath>
+		<PackageReadmeFile>./README.md</PackageReadmeFile>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<RepositoryUrl></RepositoryUrl>
+		<PackageProjectUrl>https://github.com/Ovis/BlogGenerator</PackageProjectUrl>
+		<Copyright>© 2025 Ovis</Copyright>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -29,6 +39,9 @@
 		</None>
 		<None Update="Templates\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Include="..\README.md" Pack="true" PackagePath="\">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
 

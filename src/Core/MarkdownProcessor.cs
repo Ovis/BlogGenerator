@@ -9,12 +9,10 @@ using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
-public class MarkdownProcessor(SiteOption siteOption, string? oEmbedDir, IFileSystemHelper fileSystemHelper)
+public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSystemHelper fileSystemHelper)
     : IMarkdownProcessor
 {
-    private readonly SiteOption _siteOption = siteOption;
-
-    private MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
+    private readonly MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
         .Use<OEmbedCardExtension>()
