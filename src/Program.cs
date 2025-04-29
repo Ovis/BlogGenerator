@@ -23,35 +23,113 @@ public class Program
         var commandLineSetup = new CommandLineSetup();
         var rootCommand = commandLineSetup.CreateRootCommand();
 
-        rootCommand.SetHandler(async (input, output, theme, oEmbedDir) =>
+        rootCommand.SetHandler(async (input, output, theme, oEmbedDir, configFile) =>
         {
             Console.WriteLine($"[Start] Command Line Setup: {sw.Elapsed}");
 
-            // 設定の読み込み
-            var configuration = new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
-                .Build();
+            // 設定の読み込み（優先度順に適用）
+            var configBuilder = new ConfigurationBuilder();
+
+            // 1. ユーザーホームディレクトリの設定ファイル（最も低い優先度）
+            var userConfigPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".bloggen",
+                "config.json");
+
+            if (File.Exists(userConfigPath))
+            {
+                configBuilder.AddJsonFile(userConfigPath, optional: true, reloadOnChange: true);
+                Console.WriteLine($"User config loaded from: {userConfigPath}");
+            }
+
+            // 2. カレントディレクトリのappsettings.json
+            if (File.Exists("appsettings.json"))
+            {
+                configBuilder.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+            }
+
+            if (File.Exists("appsettings.Development.json"))
+            {
+                configBuilder.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
+            }
+
+            // 3. 指定された設定ファイル（configオプションで指定）
+            if (configFile is { Exists: true })
+            {
+                configBuilder.AddJsonFile(configFile.FullName, optional: false, reloadOnChange: true);
+                Console.WriteLine($"Config file loaded from: {configFile.FullName}");
+            }
+
+            // 4. 環境変数（最も高い優先度）
+            configBuilder.AddEnvironmentVariables("BLOGGEN_");
+
+            var configuration = configBuilder.Build();
+
+            // サイトオプションの作成と優先順位付き初期化
+            var siteOption = configuration.GetSection("SiteOption").Get<SiteOption>() ?? new SiteOption();
+
+            // フィードオプションの作成と優先順位付き初期化
+            var feedOption = configuration.GetSection("FeedOption").Get<FeedOption>() ?? new FeedOption();
+
+            // サイトオプション：設定ファイルから取得できなかった場合に個別の環境変数から直接取得
+            if (string.IsNullOrEmpty(siteOption.SiteName))
+                siteOption.SiteName = Environment.GetEnvironmentVariable("BLOGGEN_SITENAME") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteUrl))
+                siteOption.SiteUrl = Environment.GetEnvironmentVariable("BLOGGEN_SITEURL") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteDescription))
+                siteOption.SiteDescription = Environment.GetEnvironmentVariable("BLOGGEN_SITEDESCRIPTION") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteAuthor))
+                siteOption.SiteAuthor = Environment.GetEnvironmentVariable("BLOGGEN_SITEAUTHOR") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.SiteAuthorDescription))
+                siteOption.SiteAuthorDescription = Environment.GetEnvironmentVariable("BLOGGEN_SITEAUTHORDESCRIPTION") ?? string.Empty;
+
+            if (string.IsNullOrEmpty(siteOption.AmazonAssociateTag))
+                siteOption.AmazonAssociateTag = Environment.GetEnvironmentVariable("BLOGGEN_AMAZONTAG") ?? string.Empty;
+
+            // フィードオプション：設定ファイルから取得できなかった場合に個別の環境変数から直接取得
+            var useRss2Str = Environment.GetEnvironmentVariable("BLOGGEN_FEED_USERSS2");
+            if (!string.IsNullOrEmpty(useRss2Str) && bool.TryParse(useRss2Str, out bool useRss2))
+                feedOption.UseRss2 = useRss2;
+
+            var useAtomStr = Environment.GetEnvironmentVariable("BLOGGEN_FEED_USEATOM");
+            if (!string.IsNullOrEmpty(useAtomStr) && bool.TryParse(useAtomStr, out bool useAtom))
+                feedOption.UseAtom = useAtom;
+
+            var rssFileName = Environment.GetEnvironmentVariable("BLOGGEN_FEED_RSSFILENAME");
+            if (!string.IsNullOrEmpty(rssFileName))
+                feedOption.RssFileName = rssFileName;
+
+            var atomFileName = Environment.GetEnvironmentVariable("BLOGGEN_FEED_ATOMFILENAME");
+            if (!string.IsNullOrEmpty(atomFileName))
+                feedOption.AtomFileName = atomFileName;
+
+            var maxItemsStr = Environment.GetEnvironmentVariable("BLOGGEN_FEED_MAXITEMS");
+            if (!string.IsNullOrEmpty(maxItemsStr) && int.TryParse(maxItemsStr, out int maxItems))
+                feedOption.MaxFeedItems = maxItems;
+
+            var language = Environment.GetEnvironmentVariable("BLOGGEN_FEED_LANGUAGE");
+            if (!string.IsNullOrEmpty(language))
+                feedOption.Language = language;
+
+            // 必須項目のバリデーション
+            if (string.IsNullOrEmpty(siteOption.SiteUrl))
+            {
+                throw new ArgumentException("SiteUrl is a required field. Please specify it via environment variables or a configuration file.");
+            }
 
             Console.WriteLine($"[Completed] Configuration Loading: {sw.Elapsed}");
-
-            var siteOption = configuration.GetSection("SiteOption").Get<SiteOption>();
-
-            if (siteOption == null)
-            {
-                throw new ArgumentNullException($"{nameof(SiteOption)} is not found");
-            }
 
             // 文字エンコーディング
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             // DIコンテナの設定
-            var serviceProvider = ConfigureServices(siteOption, theme.FullName, oEmbedDir);
+            var serviceProvider = ConfigureServices(siteOption, feedOption, theme.FullName, oEmbedDir);
 
             Console.WriteLine($"[Completed] Dependency Injection Setup: {sw.Elapsed}");
-
-            // RazorLightエンジンの取得
-            var razorLightEngine = serviceProvider.GetRequiredService<RazorLightEngine>();
 
             // 各種サービスの取得
             var markdownProcessor = serviceProvider.GetRequiredService<IMarkdownProcessor>();
@@ -109,30 +187,35 @@ public class Program
             Console.WriteLine($"[Completed] oEmbed Cache Save: {sw.Elapsed}");
 
             Console.WriteLine("Completed: " + sw.Elapsed);
-        }, commandLineSetup.InputOption, commandLineSetup.OutputOption, commandLineSetup.ThemeOption, commandLineSetup.OEmbedOption);
+        },
+        commandLineSetup.InputOption,
+        commandLineSetup.OutputOption,
+        commandLineSetup.ThemeOption,
+        commandLineSetup.OEmbedOption,
+        commandLineSetup.ConfigOption);
 
         return await rootCommand.InvokeAsync(args);
     }
 
-    private static IServiceProvider ConfigureServices(SiteOption siteOption, string themePath, string? oEmbedDir)
+    private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir)
     {
         var services = new ServiceCollection();
 
         // RazorLightEngineの登録
-        services.AddSingleton<RazorLightEngine>(sp =>
-        {
-            return new RazorLightEngineBuilder()
-                .UseFileSystemProject(themePath)
-                .UseMemoryCachingProvider()
-                .DisableEncoding()
-                .Build();
-        });
+        services.AddSingleton<RazorLightEngine>(_ => new RazorLightEngineBuilder()
+            .UseFileSystemProject(themePath)
+            .UseMemoryCachingProvider()
+            .DisableEncoding()
+            .Build());
 
         // サイトオプションの登録
         services.AddSingleton(siteOption);
 
+        // フィードオプションの登録
+        services.AddSingleton(feedOption);
+
         // oEmbedDirの登録
-        services.AddSingleton(provider => oEmbedDir);
+        services.AddSingleton(_ => oEmbedDir ?? string.Empty);
 
         // 各サービスの登録
         services.AddSingleton<IFileSystemHelper, FileSystemHelper>();
