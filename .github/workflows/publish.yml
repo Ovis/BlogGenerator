@@ -23,13 +23,13 @@ jobs:
 
       - name: Update csproj Version
         run: |
-          sed -i "s|<Version>.*</Version>|<Version>${{ env.VERSION }}</Version>|g" ./BlogGenerator/BlogGenerator.csproj
+          sed -i "s|<Version>.*</Version>|<Version>${{ env.VERSION }}</Version>|g" ./src/BlogGenerator.csproj
 
       - name: Pack NuGet package
-        run: dotnet pack ./BlogGenerator/BlogGenerator.csproj --configuration Release --output ./artifacts/nuget
+        run: dotnet pack ./src/BlogGenerator.csproj --configuration Release --output ./artifacts/nuget
 
       - name: Publish executable
-        run: dotnet publish ./BlogGenerator/BlogGenerator.csproj --configuration Release --output ./artifacts/publish
+        run: dotnet publish ./src/BlogGenerator.csproj --configuration Release --output ./artifacts/publish
 
       - name: Create publish ZIP archive
         run: |
@@ -38,11 +38,8 @@ jobs:
 
       - name: Create template ZIP archive
         run: |
-          cd ./BlogGenerator
-          zip -r ../artifacts/BlogGenerator-Templates-v${{ env.VERSION }}.zip Template
-
-      - name: Push to NuGet
-        run: dotnet nuget push ./artifacts/nuget/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+          cd ./src
+          zip -r ../artifacts/BlogGenerator-TemplateSample-v${{ env.VERSION }}.zip TemplateSample
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -50,6 +47,9 @@ jobs:
           files: |
             ./artifacts/nuget/*.nupkg
             ./artifacts/BlogGenerator-v${{ env.VERSION }}.zip
-            ./artifacts/BlogGenerator-Templates-v${{ env.VERSION }}.zip
+            ./artifacts/BlogGenerator-TemplateSample-v${{ env.VERSION }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to NuGet
+        run: dotnet nuget push ./artifacts/nuget/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
