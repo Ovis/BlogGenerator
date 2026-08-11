@@ -33,6 +33,8 @@ public class Program
 
             Console.WriteLine($"[Start] Command Line Setup: {sw.Elapsed}");
 
+            ThrowIfOutputDirectoryIsInputSubdirectory(input.FullName, output.FullName);
+
             // 設定の読み込み（優先度順に適用）
             var configBuilder = new ConfigurationBuilder();
 
@@ -240,4 +242,20 @@ public class Program
 
         return services.BuildServiceProvider();
     }
+
+    private static void ThrowIfOutputDirectoryIsInputSubdirectory(string inputDir, string outputDir)
+    {
+        var normalizedInputDir = NormalizeDirectoryPath(inputDir);
+        var normalizedOutputDir = NormalizeDirectoryPath(outputDir);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+        if (string.Equals(normalizedInputDir, normalizedOutputDir, comparison) ||
+            normalizedOutputDir.StartsWith(normalizedInputDir + Path.DirectorySeparatorChar, comparison))
+        {
+            throw new ArgumentException("Output directory must not be the same as or a subdirectory of the input directory.");
+        }
+    }
+
+    private static string NormalizeDirectoryPath(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 }
