@@ -144,6 +144,9 @@ public class PageGeneratorTests
             Assert.That(normalArticleHtml, Does.Contain("Normal article"));
             Assert.That(normalArticleHtml, Does.Contain("2026/08/11 10:00"));
             Assert.That(normalArticleHtml, Does.Contain("/blog/tags/csharp"));
+            Assert.That(normalArticleHtml, Does.Contain("href=\"/blog/posts/article.html\""));
+            Assert.That(normalArticleHtml, Does.Contain("content=\"https://example.com/blog/posts/article.html\""));
+            Assert.That(normalArticleHtml, Does.Not.Contain("/blog/blog/posts/article.html"));
             Assert.That(normalArticleHtml, Does.Contain("pt-0"));
             Assert.That(fixedPageHtml, Does.Contain("Fixed body"));
             Assert.That(fixedPageHtml, Does.Not.Contain("fa-calendar-alt"));
