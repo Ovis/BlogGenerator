@@ -18,6 +18,8 @@
   - Frontmatter 解析
   - Markdig パイプライン構築
   - 画像 URL の書換え
+  - `OEmbedCardExtension.InitializeAsync()` による oEmbed 初期化
+  - `OEmbedDocumentResolver` による描画前の oEmbed 解決
   - `Article` への変換
 
 - `src/Core/PageGenerator.cs`
@@ -73,11 +75,36 @@
   - `[amazon:ASIN]` の処理
 
 - `src/MarkdigExtension/OEmbedExtension.cs`
-  - `[oembed:"URL"]` の処理
-  - oEmbed provider 読込
-  - discovery
-  - OGP フォールバック
-  - キャッシュ保存/読込
+  - `[oembed:"URL"]` 記法の検出
+  - `OEmbedInline` と `OEmbedInlineRenderer` の登録
+  - `OEmbedResolver` の初期化と共有
+
+- `src/MarkdigExtension/OEmbedInline.cs`
+  - oEmbed 用の独自 Inline ノード
+
+- `src/MarkdigExtension/OEmbedInlineRenderer.cs`
+  - `OEmbedInline` を最終 HTML へ描画
+
+- `src/MarkdigExtension/OEmbedResolver.cs`
+  - provider / discovery / OGP / fallback をまとめた URL 解決フロー
+
+- `src/MarkdigExtension/OEmbedProviderCatalog.cs`
+  - provider URL と endpoint の対応解決
+
+- `src/MarkdigExtension/OEmbedProviderCatalogLoader.cs`
+  - `providers.json` の取得と catalog 構築
+
+- `src/MarkdigExtension/OEmbedEndpointResolver.cs`
+  - oEmbed endpoint 応答の取得と JSON/XML 解釈
+
+- `src/MarkdigExtension/OEmbedSiteMetaDataExtractor.cs`
+  - HTML から OGP / discovery 情報を抽出
+
+- `src/MarkdigExtension/OEmbedDocumentResolver.cs`
+  - Markdown AST 上の `OEmbedInline` へ解決済み HTML を注入
+
+- `src/MarkdigExtension/OEmbedCacheStore.cs`
+  - oEmbed キャッシュの保存 / 読込
 
 - `src/Converters/AutoNumberToStringConverter.cs`
   - oEmbed JSON の数値/文字列差異吸収

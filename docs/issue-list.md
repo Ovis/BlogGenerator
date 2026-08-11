@@ -3,6 +3,26 @@
 この文書は、`BlogGenerator` が現時点で抱えている課題点の一覧です。
 改修計画、優先順位付け、別チャットでの引き継ぎ時に、そのまま一次資料として使うことを想定しています。
 
+## 2026-08-11 時点の反映状況
+
+以下は 2026-08-11 現在の状態です。
+
+- 解消済み
+  - 入力配下の静的ファイルコピー不完全
+  - 公開日未設定記事のアーカイブ不整合
+  - タグ URL の危険文字問題
+  - oEmbed の同期ブロッキング構造
+  - README の CLI / Frontmatter 誤記
+  - 自動テスト不在
+  - `AngleSharp 1.3.0` 起因の既知警告
+  - Markdown 処理と静的ファイルコピーの強結合
+- 残課題
+  - コピー時のリトライ条件が英語例外メッセージ依存
+  - サンプルテーマに運用前提のハードコードが残っている
+  - 通常の `dotnet build` / `dotnet test` が `RelaxVersioner` の参照コミット欠落で失敗する
+
+このため、以下の本文は「改修開始時点の課題一覧」と「現時点の残課題」を両方追える形で読むこと
+
 ## スコープ
 
 - 確認日: 2026-08-11
@@ -24,7 +44,7 @@
 - `Low`
   - 直近の致命傷ではないが、整理しておきたい
 
-## 課題一覧
+## 改修開始時点の課題一覧
 
 ### 1. 入力配下の静的ファイルコピーが不完全
 
@@ -185,7 +205,7 @@
 
 ## 優先対応案
 
-まずは次の順で着手するのが妥当です。
+改修開始時点では、まずは次の順で着手するのが妥当でした。
 
 1. 静的ファイルコピーの見直し
 2. 公開日未設定記事とアーカイブ表示の整合化
@@ -194,6 +214,38 @@
 5. README と docs の整合化
 6. 依存パッケージの更新検討
 7. oEmbed のネットワーク依存と同期処理の整理
+
+## 2026-08-11 時点の残課題
+
+### 1. コピー時のリトライ条件が英語例外メッセージ依存
+
+- Priority: `Medium`
+- 概要:
+  - `IOException` のリトライ条件が `"being used by another process"` 文字列に依存している
+- 該当箇所:
+  - [src/Core/FileSystemHelper.cs](/F:/_Git/Blog/BlogGenerator/src/Core/FileSystemHelper.cs:52)
+
+### 2. サンプルテーマに運用前提のハードコードが残っている
+
+- Priority: `Low`
+- 概要:
+  - サンプルテーマ内に固定リンクや外部 CDN 依存がある
+- 該当箇所:
+  - [src/TemplateSample/Layout.cshtml](/F:/_Git/Blog/BlogGenerator/src/TemplateSample/Layout.cshtml:51)
+  - [src/TemplateSample/Layout.cshtml](/F:/_Git/Blog/BlogGenerator/src/TemplateSample/Layout.cshtml:89)
+  - [src/TemplateSample/SideBar.cshtml](/F:/_Git/Blog/BlogGenerator/src/TemplateSample/SideBar.cshtml:22)
+  - [src/TemplateSample/SideBar.cshtml](/F:/_Git/Blog/BlogGenerator/src/TemplateSample/SideBar.cshtml:29)
+  - [src/TemplateSample/SideBar.cshtml](/F:/_Git/Blog/BlogGenerator/src/TemplateSample/SideBar.cshtml:36)
+- 補足:
+  - 今回は対応対象外として残置する
+
+### 3. 通常の build / test が RelaxVersioner 起因で失敗する
+
+- Priority: `Medium`
+- 概要:
+  - 通常の `dotnet build BlogGenerator.sln -v minimal` / `dotnet test BlogGenerator.sln -v minimal` が `RelaxVersioner` の参照コミット欠落で失敗する
+- 影響:
+  - 検証時に `/p:CodexSkipRelaxVersioner=true` の暫定回避が必要
 
 ## 関連資料
 
