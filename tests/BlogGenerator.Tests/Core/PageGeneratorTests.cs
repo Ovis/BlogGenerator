@@ -193,6 +193,32 @@ public class PageGeneratorTests
         });
     }
 
+    [Test]
+    public async Task 複数ページのページネーションURLはスラッシュ区切りで生成する()
+    {
+        var pageGenerator = CreatePageGenerator();
+        var outputDir = CreateOutputDirectory();
+        var articles = CreatePagedArticles();
+
+        await pageGenerator.GenerateIndexPagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateArchivePagesAsync(articles, outputDir, "<aside>stub</aside>");
+
+        var indexPageHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "index.html"));
+        var csharpTagHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "csharp", "index.html"));
+        var archiveHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "2026", "08", "index.html"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(indexPageHtml, Does.Contain("href=\"/blog/2\""));
+            Assert.That(indexPageHtml, Does.Not.Contain("/blog\\2"));
+            Assert.That(csharpTagHtml, Does.Contain("href=\"/blog/tags/csharp/2\""));
+            Assert.That(csharpTagHtml, Does.Not.Contain("/blog/tags/csharp\\2"));
+            Assert.That(archiveHtml, Does.Contain("href=\"/blog/2026/08/2\""));
+            Assert.That(archiveHtml, Does.Not.Contain("/blog/2026/08\\2"));
+        });
+    }
+
     private PageGenerator CreatePageGenerator()
     {
         var templatePath = Path.Combine(GetRepositoryRootPath(), "src", "TemplateSample");
@@ -246,6 +272,21 @@ public class PageGeneratorTests
                 RootRelativeDirectoryPath: "/blog/drafts",
                 IsFixedPage: false)
         ];
+    }
+
+    private List<Article> CreatePagedArticles()
+    {
+        return Enumerable.Range(1, 11)
+            .Select(index => new Article(
+                FileName: $"article-{index}.html",
+                Title: $"Paged article {index}",
+                Body: $"<p>Paged body {index}</p>",
+                Tags: ["csharp"],
+                Published: DateTimeOffset.Parse($"2026-08-{index:00}T09:00:00+09:00"),
+                RelativeDirectoryPath: "posts",
+                RootRelativeDirectoryPath: "/blog/posts",
+                IsFixedPage: false))
+            .ToList();
     }
 
     private string CreateOutputDirectory()
