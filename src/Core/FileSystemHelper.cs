@@ -4,6 +4,9 @@ namespace BlogGenerator.Core;
 
 public class FileSystemHelper : IFileSystemHelper
 {
+    private const int ErrorSharingViolation = 32;
+    private const int ErrorLockViolation = 33;
+
     public void EnsureDirectoryExists(string path)
     {
         if (!Directory.Exists(path))
@@ -49,7 +52,7 @@ public class FileSystemHelper : IFileSystemHelper
                 File.Copy(sourceFilePath, targetFilePath, true);
                 success = true;
             }
-            catch (IOException ex) when (ex.Message.Contains("being used by another process"))
+            catch (IOException ex) when (IsRetryableCopyIOException(ex))
             {
                 attempt++;
                 if (attempt < maxRetries)
@@ -62,5 +65,11 @@ public class FileSystemHelper : IFileSystemHelper
                 }
             }
         }
+    }
+
+    private static bool IsRetryableCopyIOException(IOException ex)
+    {
+        var win32Error = ex.HResult & 0xFFFF;
+        return win32Error is ErrorSharingViolation or ErrorLockViolation;
     }
 }
