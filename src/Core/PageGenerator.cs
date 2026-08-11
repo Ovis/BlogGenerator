@@ -80,7 +80,7 @@ public class PageGenerator : IPageGenerator
                     CurrentPage = pageIndex + 1,
                     TotalPages = pagedArticles.Count,
                     MaxPagesToShow = 6,
-                    RelativeDirectoryPath = Path.Combine(_siteOption.BaseAbsolutePath)
+                    RelativeDirectoryPath = PageModelBase.CombineUrlPath(_siteOption.BaseAbsolutePath)
                 }
             };
 
@@ -147,7 +147,7 @@ public class PageGenerator : IPageGenerator
                         CurrentPage = pageIndex + 1,
                         TotalPages = pagedArticles.Count,
                         MaxPagesToShow = 6,
-                        RelativeDirectoryPath = Path.Combine(_siteOption.BaseAbsolutePath, "tags", PageModelBase.EncodeTagSegment(tagArticle.Tag))
+                        RelativeDirectoryPath = PageModelBase.CombineUrlPath(_siteOption.BaseAbsolutePath, "tags", PageModelBase.EncodeTagSegment(tagArticle.Tag))
                     }
                 };
 
@@ -201,7 +201,7 @@ public class PageGenerator : IPageGenerator
                         CurrentPage = pageIndex + 1,
                         TotalPages = pagedArticles.Count,
                         MaxPagesToShow = 6,
-                        RelativeDirectoryPath = Path.Combine(_siteOption.BaseAbsolutePath, Path.Combine(yearMonthArticle.YearMonth.Replace("/", Path.DirectorySeparatorChar.ToString())))
+                        RelativeDirectoryPath = PageModelBase.CombineUrlPath(_siteOption.BaseAbsolutePath, yearMonthArticle.YearMonth)
                     }
                 };
 
