@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Serialization;
-using AngleSharp.Html.Parser;
 using BlogGenerator.Converters;
 using BlogGenerator.MarkdigExtension.Models;
 using Hnx8.ReadJEnc;
@@ -174,6 +173,7 @@ public class OEmbedCardExtension : IMarkdownExtension
 public class OEmbedCardParser : InlineParser
 {
     private static OEmbedProviderCatalog _oEmbedProviderCatalog = new([]);
+    private static OEmbedSiteMetaDataExtractor _oEmbedSiteMetaDataExtractor = new(new HttpClient());
     private static HttpClient _httpClient = new();
     private static readonly ConcurrentDictionary<string, string> _oEmbedCache = new();
 
@@ -186,6 +186,7 @@ public class OEmbedCardParser : InlineParser
     {
         _oEmbedProviderCatalog = oEmbedProviderCatalog;
         _httpClient = httpClient;
+        _oEmbedSiteMetaDataExtractor = new OEmbedSiteMetaDataExtractor(httpClient);
         OpeningCharacters = ['['];
     }
 
@@ -253,7 +254,7 @@ public class OEmbedCardParser : InlineParser
         }
 
         // 2. サイトメタデータ取得
-        var (isMetaDataSuccess, metaData) = await GetSiteMetaDataAsync(url);
+        var (isMetaDataSuccess, metaData) = await _oEmbedSiteMetaDataExtractor.GetSiteMetaDataAsync(url);
         if (!isMetaDataSuccess)
         {
             html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
@@ -262,7 +263,7 @@ public class OEmbedCardParser : InlineParser
         }
 
         // 3. oEmbed Discovery
-        var oEmbedEndpoint = GetOEmbedEndpoint(metaData);
+        var oEmbedEndpoint = OEmbedSiteMetaDataExtractor.GetOEmbedEndpoint(metaData);
         if (!string.IsNullOrEmpty(oEmbedEndpoint))
         {
             var (isSuccess, embedHtml, _, _) = await GetEmbedResultAsync(oEmbedEndpoint, string.Empty);
@@ -286,73 +287,6 @@ public class OEmbedCardParser : InlineParser
         html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
         _oEmbedCache[url] = html;
         return html;
-    }
-
-    /// <summary>
-    /// メタデータからoEmbedエンドポイントを取得
-    /// </summary>
-    private static string GetOEmbedEndpoint(SiteMetaData metaData)
-    {
-        if (!string.IsNullOrEmpty(metaData.OembedJson))
-            return metaData.OembedJson;
-
-        if (!string.IsNullOrEmpty(metaData.OembedXml))
-            return metaData.OembedXml;
-
-        return string.Empty;
-    }
-
-    /// <summary>
-    /// サイトメタデータを取得
-    /// </summary>
-    private async Task<(bool IsSuccess, SiteMetaData Data)> GetSiteMetaDataAsync(string url)
-    {
-        // Webサイトコンテンツ取得
-        var (isSuccess, contentHtml, _, _) = await GetWebsiteContentAsync(url);
-        if (!isSuccess || string.IsNullOrEmpty(contentHtml))
-        {
-            return (false, new SiteMetaData());
-        }
-
-        try
-        {
-            // HTMLパース
-            var document = new HtmlParser().ParseDocument(contentHtml);
-
-            // メタデータ抽出
-            var metaData = new SiteMetaData
-            {
-                Url = url,
-                Title = document.QuerySelector("title")?.TextContent ?? string.Empty,
-                OgTitle = document.QuerySelector("meta[property='og:title']")?.GetAttribute("content") ?? string.Empty,
-                OgImage = document.QuerySelector("meta[property='og:image']")?.GetAttribute("content") ?? string.Empty,
-                OgDescription = document.QuerySelector("meta[property='og:description']")?.GetAttribute("content") ?? string.Empty,
-                OgType = document.QuerySelector("meta[property='og:type']")?.GetAttribute("content") ?? string.Empty,
-                OgUrl = document.QuerySelector("meta[property='og:url']")?.GetAttribute("content") ?? string.Empty,
-                OgSiteName = document.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content") ?? string.Empty,
-                OembedJson = document.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href") ?? string.Empty,
-                OembedXml = GetXmlOembedLink(document)
-            };
-
-            return (true, metaData);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"Error parsing HTML: {e.Message}, URL: {url}");
-            return (false, new SiteMetaData());
-        }
-    }
-
-    /// <summary>
-    /// XMLのoEmbedリンクを取得（複数の可能性に対応）
-    /// </summary>
-    private static string GetXmlOembedLink(AngleSharp.Html.Dom.IHtmlDocument document)
-    {
-        var xmlLink = document.QuerySelector("link[type='application/xml+oembed']")?.GetAttribute("href");
-        if (!string.IsNullOrEmpty(xmlLink))
-            return xmlLink;
-
-        return document.QuerySelector("link[type='text/xml+oembed']")?.GetAttribute("href") ?? string.Empty;
     }
 
     /// <summary>
