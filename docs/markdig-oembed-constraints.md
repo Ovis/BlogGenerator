@@ -3,6 +3,18 @@
 この文書は、`BlogGenerator` が Markdown 処理に依存している `Markdig` を前提とした場合に、
 oEmbed 系処理へ手を入れる際の技術的制約と注意点を整理したものです。
 
+## 2026-08-11 時点の注記
+
+この文書にある制約の多くは、改修開始時点の問題整理です。
+2026-08-11 現在は次が反映済みです。
+
+- `InlineParser.Match()` では HTTP 解決を行わず、`OEmbedInline` の生成だけを担当する
+- provider 一覧読込は `MarkdownProcessor.InitializeAsync()` から `OEmbedCardExtension.InitializeAsync()` を呼ぶ形へ移り、`Setup()` 内の同期ネットワーク初期化は解消済み
+- `HtmlInline` 直書きはやめ、`OEmbedInlineRenderer` が最終 HTML を出力する
+- frontmatter 抽出用 pipeline と本文用 pipeline は分離済み
+
+したがって、以下の本文は「なぜこの分離が必要だったか」の一次資料として扱うこと
+
 ## スコープ
 
 - 確認日: 2026-08-11
@@ -16,7 +28,7 @@ oEmbed 系処理へ手を入れる際の技術的制約と注意点を整理し�
   - 現行実装で起きている構造上の問題
   - 改修時に先に整理すべきポイント
 
-## 結論
+## 改修開始時点の結論
 
 `BlogGenerator` の oEmbed 改修で本当に厄介なのは、oEmbed の仕様そのものより、
 `Markdig` の拡張ポイントにネットワーク I/O を直接持ち込んでいる現状の構造です。
@@ -29,15 +41,15 @@ oEmbed 系処理へ手を入れる際の技術的制約と注意点を整理し�
 - Markdown 処理は並列だが、oEmbed 側は static 状態を広く共有している
 - HTML 生成が `HtmlInline` へ直書きされ、テーマやレンダラ差し替えに弱い
 
-## 現在の依存関係
+## 改修開始時点の依存関係
 
-`BlogGenerator` は `Markdig 0.41.0` に依存しています。
+`BlogGenerator` は改修開始時点で `Markdig 0.41.0` に依存していました。
 
 根拠:
 
 - [src/BlogGenerator.csproj](/F:/_Git/Blog/BlogGenerator/src/BlogGenerator.csproj:23)
 
-## BlogGenerator における Markdig の使い方
+## 改修開始時点の Markdig の使い方
 
 Markdown パイプラインは `MarkdownProcessor` で構築されています。
 
@@ -53,9 +65,12 @@ Markdown パイプラインは `MarkdownProcessor` で構築されています�
 - [src/Core/MarkdownProcessor.cs](/F:/_Git/Blog/BlogGenerator/src/Core/MarkdownProcessor.cs:15)
 - [src/Core/MarkdownProcessor.cs](/F:/_Git/Blog/BlogGenerator/src/Core/MarkdownProcessor.cs:18)
 
-この設計により、oEmbed は Markdown パースの最中にインラインとして評価されます。
+この設計により、oEmbed は Markdown パースの最中にインラインとして評価されていました。
 
 ## 制約 1: InlineParser は同期 API
+
+この制約自体は現在も変わりません。
+ただし、2026-08-11 現在の `OEmbedCardParser` はこの制約の影響を受けるのを避けるため、URL 抽出と `OEmbedInline` 生成だけに寄せています。
 
 `OEmbedCardParser` は `InlineParser` を継承し、`Match` を実装しています。
 
@@ -67,7 +82,7 @@ Markdown パイプラインは `MarkdownProcessor` で構築されています�
 この `Match` は同期メソッドです。
 したがって、本来非同期であるべき HTTP 取得を素直には書けません。
 
-現状は次のように同期ブロックで逃がしています。
+改修開始時点では次のように同期ブロックで逃がしていました。
 
 - `GetOEmbedHtml(url).GetAwaiter().GetResult()`
 
@@ -83,6 +98,9 @@ Markdown パイプラインは `MarkdownProcessor` で構築されています�
 - テストで非同期境界を分離しにくい
 
 ## 制約 2: pipeline 初期化時にも同期ネットワークを行っている
+
+この制約は 2026-08-11 時点で解消済みです。
+provider 一覧取得は `InitializeAsync()` 側へ移し、`Setup()` では parser / renderer 登録だけを行います。
 
 `OEmbedCardExtension.Setup(MarkdownPipelineBuilder)` 内で、初回だけ provider 一覧を取りに行っています。
 
@@ -101,6 +119,8 @@ Markdown パイプラインは `MarkdownProcessor` で構築されています�
 - テストの際に「パース前に何を準備すべきか」が不透明になる
 
 ## 制約 3: frontmatter 抽出でも同じ pipeline を通している
+
+この制約は 2026-08-11 時点で解消済みです。
 
 `MarkdownProcessor.ParseMarkdownWithFrontmatter` では `Markdown.Parse` を 2 回呼んでいます。
 
@@ -122,19 +142,18 @@ Markdown パイプラインは `MarkdownProcessor` で構築されています�
 
 ## 制約 4: Markdown 処理は並列だが、oEmbed 側は static 状態が多い
 
-Markdown ファイル処理は `AsParallel()` で並列実行されています。
+Markdown ファイル処理は改修開始時点で `AsParallel()` により並列実行されていました。
 
 根拠:
 
 - [src/Core/MarkdownProcessor.cs](/F:/_Git/Blog/BlogGenerator/src/Core/MarkdownProcessor.cs:33)
 
-一方で `OEmbedExtension` 側には static 状態が多数あります。
+一方で `OEmbedExtension` 側には static 状態が多数ありました。
 
 - `HttpClient`
-- `_oEmbedProvidersJson`
-- `OembedProviderDic`
+- provider catalog
+- `OEmbedResolver`
 - `OEmbedCardParser`
-- `_oEmbedCache`
 
 根拠:
 
@@ -152,7 +171,9 @@ Markdown ファイル処理は `AsParallel()` で並列実行されています�
 
 ## 制約 5: HTML 出力がパーサ内で直組みされている
 
-oEmbed 成功時も OGP fallback 時も、最終的な HTML は `HtmlInline` または文字列連結で生成しています。
+この制約は 2026-08-11 時点で解消済みです。
+
+改修開始時点では、oEmbed 成功時も OGP fallback 時も、最終的な HTML は `HtmlInline` または文字列連結で生成していました。
 
 根拠:
 

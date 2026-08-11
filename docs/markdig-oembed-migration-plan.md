@@ -3,6 +3,15 @@
 この文書は、`BlogGenerator` の Markdown / oEmbed 改修について、2026-08-11 時点の判断を単独で参照できるようにまとめた一次資料です。
 実装方針、採用理由、最低限の実施順序、設計上の注意点をここに固定します。
 
+## 2026-08-11 時点の実装反映状況
+
+- `Markdig` は `1.3.2` へ更新済み
+- frontmatter 抽出用 pipeline と本文用 pipeline は分離済み
+- `[oembed:"..."]` は `OEmbedInline` を生成し、`OEmbedInlineRenderer` が HTML を出力する
+- URL 解決は `OEmbedResolver`、`OEmbedEndpointResolver`、`OEmbedSiteMetaDataExtractor`、`OEmbedProviderCatalogLoader`、`OEmbedCacheStore`、`OEmbedDocumentResolver` へ分離済み
+- provider 一覧読込は `MarkdownProcessor.InitializeAsync()` 経由の明示初期化へ移し、`Setup()` や `InlineParser.Match()` で `GetAwaiter().GetResult()` は使っていない
+- したがって、この文書の「問題」「制約」「最低限の実施範囲」は、改修開始時点の整理として読むこと
+
 ## スコープ
 
 - 対象:
@@ -28,9 +37,9 @@
 4. frontmatter 抽出と本文レンダリングは同じ pipeline を使わない
 5. oEmbed の HTTP 解決、provider 解決、discovery、OGP、キャッシュは Markdig parser から分離する
 
-## 現在の把握
+## 改修開始時点の把握
 
-現行実装は `Markdig 0.41.0` に依存しています。
+改修開始時点の実装は `Markdig 0.41.0` に依存していました。
 
 - 根拠:
   - [src/BlogGenerator.csproj](/F:/_Git/Blog/BlogGenerator/src/BlogGenerator.csproj:23)
@@ -41,17 +50,17 @@
   - [NuGet: Markdig](https://www.nuget.org/packages/Markdig)
   - [Markdig GitHub](https://github.com/xoofx/markdig)
 
-また、現在の Markdown パイプラインは `MarkdownProcessor` で 1 本だけ構築されており、
+また、改修開始時点では Markdown パイプラインは `MarkdownProcessor` で 1 本だけ構築されており、
 その中に `UseYamlFrontMatter()` と `OEmbedCardExtension` の両方が入っています。
 
 - 根拠:
   - [src/Core/MarkdownProcessor.cs](/F:/_Git/Blog/BlogGenerator/src/Core/MarkdownProcessor.cs:14)
 
-このため、frontmatter 抽出でも本文レンダリングでも同じ oEmbed 拡張が評価されます。
+このため、frontmatter 抽出でも本文レンダリングでも同じ oEmbed 拡張が評価されていました。
 
-## 現行構造の問題
+## 改修開始時点の問題
 
-現状の `OEmbedCardExtension` / `OEmbedCardParser` は、次を 1 つの拡張に抱えています。
+改修開始時点の `OEmbedCardExtension` / `OEmbedCardParser` は、次を 1 つの拡張に抱えていました。
 
 - provider 一覧取得
 - provider マッチング
@@ -62,7 +71,7 @@
 - キャッシュ保存 / 読込
 
 さらに `InlineParser.Match()` の中で `GetOEmbedHtml(url).GetAwaiter().GetResult()` を呼び、
-`HtmlInline` を直接差し込んでいます。
+`HtmlInline` を直接差し込んでいました。
 
 - 根拠:
   - [src/MarkdigExtension/OEmbedExtension.cs](/F:/_Git/Blog/BlogGenerator/src/MarkdigExtension/OEmbedExtension.cs:189)
@@ -159,7 +168,7 @@ frontmatter 抽出でも同じ pipeline を使っている現状は見直しま�
 3. `HtmlInline` 直書きをやめ、独自 AST ノード + 独自 renderer へ移す
 4. frontmatter 用 pipeline と本文用 pipeline を分離する
 
-ここまでは実施対象です。
+2026-08-11 時点では、ここまでは実施済みです。
 
 一方で、次は今回の最低限スコープには含めません。
 
