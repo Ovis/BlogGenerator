@@ -14,36 +14,20 @@ namespace BlogGenerator.MarkdigExtension;
 /// </summary>
 public class OEmbedCardExtension : IMarkdownExtension
 {
-    private static bool _isFirstCall = true;
-    private static readonly object LockObject = new();
     private static readonly HttpClient HttpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(15) // 15秒でタイムアウト
     };
+    private static readonly SemaphoreSlim InitializationSemaphore = new(1, 1);
 
     private static OEmbedResolver _oEmbedResolver = new(new OEmbedProviderCatalog([]), HttpClient);
+    private static bool _isInitialized;
 
-    public static OEmbedCardParser OEmbedCardParser { get; private set; } = null!;
+    public static OEmbedCardParser OEmbedCardParser { get; private set; } = new(_oEmbedResolver);
     public static OEmbedResolver OEmbedResolver => _oEmbedResolver;
 
     public void Setup(MarkdownPipelineBuilder pipeline)
     {
-        lock (LockObject)
-        {
-            if (_isFirstCall)
-            {
-                // HttpClientの初期化
-                HttpClient.DefaultRequestHeaders.Add("User-Agent", "BlogGenerator");
-
-                // 初回実行時のみoEmbed Provider情報を取得
-                var providerCatalog = new OEmbedProviderCatalogLoader(HttpClient).LoadAsync().GetAwaiter().GetResult();
-                _isFirstCall = false;
-
-                _oEmbedResolver = new OEmbedResolver(providerCatalog, HttpClient);
-                OEmbedCardParser = new OEmbedCardParser(_oEmbedResolver);
-            }
-        }
-
         if (!pipeline.InlineParsers.Contains<OEmbedCardParser>())
         {
             pipeline.InlineParsers.Insert(0, OEmbedCardParser);
@@ -55,6 +39,33 @@ public class OEmbedCardExtension : IMarkdownExtension
         if (renderer is HtmlRenderer htmlRenderer && !htmlRenderer.ObjectRenderers.Contains<OEmbedInlineRenderer>())
         {
             htmlRenderer.ObjectRenderers.Insert(0, new OEmbedInlineRenderer());
+        }
+    }
+
+    public static async Task InitializeAsync()
+    {
+        if (_isInitialized)
+            return;
+
+        await InitializationSemaphore.WaitAsync();
+        try
+        {
+            if (_isInitialized)
+                return;
+
+            if (!HttpClient.DefaultRequestHeaders.UserAgent.Any())
+            {
+                HttpClient.DefaultRequestHeaders.Add("User-Agent", "BlogGenerator");
+            }
+
+            var providerCatalog = await new OEmbedProviderCatalogLoader(HttpClient).LoadAsync();
+            _oEmbedResolver = new OEmbedResolver(providerCatalog, HttpClient);
+            OEmbedCardParser = new OEmbedCardParser(_oEmbedResolver);
+            _isInitialized = true;
+        }
+        finally
+        {
+            InitializationSemaphore.Release();
         }
     }
 

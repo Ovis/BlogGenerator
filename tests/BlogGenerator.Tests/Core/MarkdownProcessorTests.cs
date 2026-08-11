@@ -174,11 +174,6 @@ public class MarkdownProcessorTests
         {
             parser ??= new OEmbedCardParser(new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient()));
 
-            // MarkdownProcessor生成時の初回プロバイダ取得を避け、テストを外部通信から切り離す
-            typeof(OEmbedCardExtension)
-                .GetField("_isFirstCall", BindingFlags.Static | BindingFlags.NonPublic)!
-                .SetValue(null, false);
-
             typeof(OEmbedCardExtension)
                 .GetProperty(nameof(OEmbedCardExtension.OEmbedCardParser), BindingFlags.Static | BindingFlags.Public)!
                 .GetSetMethod(nonPublic: true)!
