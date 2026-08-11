@@ -41,7 +41,7 @@ public class OEmbedCardExtension : IMarkdownExtension
                 GetOEmbedProvidersJsonAsync().GetAwaiter().GetResult();
                 _isFirstCall = false;
 
-                OEmbedCardParser = new OEmbedCardParser(OEmbedProviderCatalog, HttpClient);
+                OEmbedCardParser = new OEmbedCardParser(new OEmbedResolver(OEmbedProviderCatalog, HttpClient));
             }
         }
 
@@ -167,21 +167,16 @@ public class OEmbedCardExtension : IMarkdownExtension
 /// </summary>
 public class OEmbedCardParser : InlineParser
 {
-    private static OEmbedProviderCatalog _oEmbedProviderCatalog = new([]);
-    private static OEmbedEndpointResolver _oEmbedEndpointResolver = new(new HttpClient());
-    private static OEmbedSiteMetaDataExtractor _oEmbedSiteMetaDataExtractor = new(new HttpClient());
-    private static readonly ConcurrentDictionary<string, string> _oEmbedCache = new();
+    private static OEmbedResolver _oEmbedResolver = new(new OEmbedProviderCatalog([]), new HttpClient());
 
     // OEmbedCacheをパブリックプロパティとして公開
-    public static ConcurrentDictionary<string, string> OEmbedCache => _oEmbedCache;
+    public static ConcurrentDictionary<string, string> OEmbedCache => _oEmbedResolver.OEmbedCache;
 
     private static readonly Regex OEmbedTagRegex = new(@"\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
 
-    public OEmbedCardParser(OEmbedProviderCatalog oEmbedProviderCatalog, HttpClient httpClient)
+    public OEmbedCardParser(OEmbedResolver oEmbedResolver)
     {
-        _oEmbedProviderCatalog = oEmbedProviderCatalog;
-        _oEmbedEndpointResolver = new OEmbedEndpointResolver(httpClient);
-        _oEmbedSiteMetaDataExtractor = new OEmbedSiteMetaDataExtractor(httpClient);
+        _oEmbedResolver = oEmbedResolver;
         OpeningCharacters = ['['];
     }
 
@@ -202,7 +197,7 @@ public class OEmbedCardParser : InlineParser
         }
 
         var url = match.Groups["url"].Value;
-        var htmlContent = GetOEmbedHtml(url).GetAwaiter().GetResult();
+        var htmlContent = _oEmbedResolver.GetOEmbedHtmlAsync(url).GetAwaiter().GetResult();
 
         // インラインとして処理
         processor.Inline = new HtmlInline(htmlContent)
@@ -218,111 +213,5 @@ public class OEmbedCardParser : InlineParser
         processor.Inline.Span.End = processor.Inline.Span.Start + match.Length - 1;
         slice.Start += match.Length;
         return true;
-    }
-
-    private async ValueTask<string> GetOEmbedHtml(string url)
-    {
-        // キャッシュ検索
-        if (_oEmbedCache.TryGetValue(url, out var cachedResult))
-        {
-            return cachedResult;
-        }
-
-        // URLに応じた処理ルート選択
-        string html;
-
-        // GitHub Gist特別処理
-        if (url.Contains("gist.github.com"))
-        {
-            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateGistEmbed(url));
-            _oEmbedCache[url] = html;
-            return html;
-        }
-
-        // 1. oEmbed Provider対応チェック
-        var (isProviderSupported, richLinkHtml, isVideo) = await GetRichLinkByOEmbedProviderAsync(url);
-        if (isProviderSupported)
-        {
-            html = OEmbedHtmlFactory.WrapInParagraph(richLinkHtml ?? string.Empty, isVideo);
-            _oEmbedCache[url] = html;
-            return html;
-        }
-
-        // 2. サイトメタデータ取得
-        var (isMetaDataSuccess, metaData) = await _oEmbedSiteMetaDataExtractor.GetSiteMetaDataAsync(url);
-        if (!isMetaDataSuccess)
-        {
-            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
-            _oEmbedCache[url] = html;
-            return html;
-        }
-
-        // 3. oEmbed Discovery
-        var oEmbedEndpoint = OEmbedSiteMetaDataExtractor.GetOEmbedEndpoint(metaData);
-        if (!string.IsNullOrEmpty(oEmbedEndpoint))
-        {
-            var (isSuccess, embedHtml, _, _) = await _oEmbedEndpointResolver.GetEmbedResultAsync(oEmbedEndpoint, string.Empty);
-            if (isSuccess && !string.IsNullOrEmpty(embedHtml))
-            {
-                html = OEmbedHtmlFactory.WrapInParagraph(embedHtml);
-                _oEmbedCache[url] = html;
-                return html;
-            }
-        }
-
-        // 4. OGP情報による生成
-        if (!string.IsNullOrEmpty(metaData.OgTitle) && !string.IsNullOrEmpty(metaData.OgUrl))
-        {
-            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateOgpCard(url, metaData));
-            _oEmbedCache[url] = html;
-            return html;
-        }
-
-        // 5. 標準リンク
-        html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
-        _oEmbedCache[url] = html;
-        return html;
-    }
-
-    /// <summary>
-    /// oEmbedプロバイダからリッチリンクHTMLを取得
-    /// </summary>
-    private async Task<(bool IsSuccess, string? RichLinkHtml, bool IsVideo)> GetRichLinkByOEmbedProviderAsync(string url)
-    {
-        // プロバイダURLの検索
-        var existProviderUrl = _oEmbedProviderCatalog.FindMatchingProviderUrl(url);
-        if (string.IsNullOrEmpty(existProviderUrl))
-        {
-            return (false, null, false);
-        }
-
-        // エンドポイントURL取得
-        var endpointUrl = _oEmbedProviderCatalog.GetProviderEndpointUrl(existProviderUrl, url);
-        if (string.IsNullOrEmpty(endpointUrl))
-        {
-            return (false, null, false);
-        }
-
-        // WordPress.com向け特殊処理
-        if (existProviderUrl.Contains("wordpress.com"))
-        {
-            endpointUrl = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(endpointUrl, new Dictionary<string, string?>
-                {
-                    { "for", "BlogGenerator" }
-                });
-        }
-
-        // oEmbedレスポンス取得
-        var (isSuccess, richLinkString, isVideo, error) = await _oEmbedEndpointResolver.GetEmbedResultAsync(endpointUrl, url);
-        if (!isSuccess)
-        {
-            if (error != null)
-            {
-                Console.WriteLine($"oEmbed error: {error.Message}, URL: {url}, Endpoint: {endpointUrl}");
-            }
-            return (false, null, false);
-        }
-
-        return (true, richLinkString, isVideo);
     }
 }

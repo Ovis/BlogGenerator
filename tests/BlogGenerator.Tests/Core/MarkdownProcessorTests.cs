@@ -172,17 +172,7 @@ public class MarkdownProcessorTests
             IDictionary<string, string>? cachedEntries = null,
             OEmbedCardParser? parser = null)
         {
-            OEmbedCardParser.OEmbedCache.Clear();
-
-            if (cachedEntries != null)
-            {
-                foreach (var cachedEntry in cachedEntries)
-                {
-                    OEmbedCardParser.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
-                }
-            }
-
-            parser ??= new OEmbedCardParser(new OEmbedProviderCatalog([]), new HttpClient());
+            parser ??= new OEmbedCardParser(new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient()));
 
             // MarkdownProcessor生成時の初回プロバイダ取得を避け、テストを外部通信から切り離す
             typeof(OEmbedCardExtension)
@@ -193,11 +183,21 @@ public class MarkdownProcessorTests
                 .GetProperty(nameof(OEmbedCardExtension.OEmbedCardParser), BindingFlags.Static | BindingFlags.Public)!
                 .GetSetMethod(nonPublic: true)!
                 .Invoke(null, [parser]);
+
+            OEmbedCardParser.OEmbedCache.Clear();
+
+            if (cachedEntries != null)
+            {
+                foreach (var cachedEntry in cachedEntries)
+                {
+                    OEmbedCardParser.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
+                }
+            }
         }
     }
 
     private sealed class CountingOEmbedCardParser()
-        : OEmbedCardParser(new OEmbedProviderCatalog([]), new HttpClient())
+        : OEmbedCardParser(new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient()))
     {
         public int MatchCallCount { get; private set; }
 
