@@ -23,8 +23,14 @@ public class Program
         var commandLineSetup = new CommandLineSetup();
         var rootCommand = commandLineSetup.CreateRootCommand();
 
-        rootCommand.SetHandler(async (input, output, theme, oEmbedDir, configFile) =>
+        rootCommand.SetAction(async (parseResult, _) =>
         {
+            var input = parseResult.GetRequiredValue(commandLineSetup.InputOption);
+            var output = parseResult.GetRequiredValue(commandLineSetup.OutputOption);
+            var theme = parseResult.GetRequiredValue(commandLineSetup.ThemeOption);
+            var oEmbedDir = parseResult.GetValue(commandLineSetup.OEmbedOption);
+            var configFile = parseResult.GetValue(commandLineSetup.ConfigOption);
+
             Console.WriteLine($"[Start] Command Line Setup: {sw.Elapsed}");
 
             // 設定の読み込み（優先度順に適用）
@@ -192,14 +198,17 @@ public class Program
             Console.WriteLine($"[Completed] oEmbed Cache Save: {sw.Elapsed}");
 
             Console.WriteLine("Completed: " + sw.Elapsed);
-        },
-        commandLineSetup.InputOption,
-        commandLineSetup.OutputOption,
-        commandLineSetup.ThemeOption,
-        commandLineSetup.OEmbedOption,
-        commandLineSetup.ConfigOption);
+            return 0;
+        });
 
-        return await rootCommand.InvokeAsync(args);
+        var invocationConfiguration = new InvocationConfiguration
+        {
+            Output = Console.Out,
+            Error = Console.Error
+        };
+
+        return await rootCommand.Parse(args, new ParserConfiguration())
+            .InvokeAsync(invocationConfiguration);
     }
 
     private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir)
