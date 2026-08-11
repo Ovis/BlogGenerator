@@ -130,8 +130,8 @@ public class PageGenerator : IPageGenerator
             {
                 // 出力フォルダパス
                 outputFilePath = pageIndex == 0
-                    ? Path.Combine(outputDir, "tags", tagArticle.Tag, "index.html")
-                    : Path.Combine(outputDir, "tags", tagArticle.Tag, $"{pageIndex + 1}.html");
+                    ? Path.Combine(outputDir, "tags", PageModelBase.EncodeTagSegment(tagArticle.Tag), "index.html")
+                    : Path.Combine(outputDir, "tags", PageModelBase.EncodeTagSegment(tagArticle.Tag), $"{pageIndex + 1}.html");
 
                 outputDirPath = Path.GetDirectoryName(outputFilePath);
                 _fileSystemHelper.EnsureDirectoryExists(outputDirPath!);
@@ -147,7 +147,7 @@ public class PageGenerator : IPageGenerator
                         CurrentPage = pageIndex + 1,
                         TotalPages = pagedArticles.Count,
                         MaxPagesToShow = 6,
-                        RelativeDirectoryPath = Path.Combine(_siteOption.BaseAbsolutePath, "tags", tagArticle.Tag)
+                        RelativeDirectoryPath = Path.Combine(_siteOption.BaseAbsolutePath, "tags", PageModelBase.EncodeTagSegment(tagArticle.Tag))
                     }
                 };
 
