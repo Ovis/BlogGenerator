@@ -53,7 +53,16 @@ public class RssFeedGeneratorTests
                     Published: DateTimeOffset.Parse("2026-08-11T10:00:00+09:00"),
                     RelativeDirectoryPath: string.Empty,
                     RootRelativeDirectoryPath: "/blog",
-                    IsFixedPage: true)
+                    IsFixedPage: true),
+                new Article(
+                    FileName: "draft.html",
+                    Title: "Draft article",
+                    Body: "<p>Draft body</p>",
+                    Tags: ["draft"],
+                    Published: DateTimeOffset.MinValue,
+                    RelativeDirectoryPath: "drafts",
+                    RootRelativeDirectoryPath: "/blog/drafts",
+                    IsFixedPage: false)
             ],
             outputDir);
 
@@ -64,8 +73,10 @@ public class RssFeedGeneratorTests
         {
             Assert.That(rssXml, Does.Contain("https://example.com/blog/about.html"));
             Assert.That(rssXml, Does.Not.Contain("https://example.com/blog//about.html"));
+            Assert.That(rssXml, Does.Not.Contain("Draft article"));
             Assert.That(atomXml, Does.Contain("https://example.com/blog/about.html"));
             Assert.That(atomXml, Does.Not.Contain("https://example.com/blog//about.html"));
+            Assert.That(atomXml, Does.Not.Contain("Draft article"));
         });
     }
 }
