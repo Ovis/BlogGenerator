@@ -27,8 +27,8 @@ public class RssFeedGenerator(SiteOption siteOption, FeedOption feedOption, IFil
             Items = articles.Take(feedOption.MaxFeedItems).Select(article => new SyndicationItem(
                 title: article.Title,
                 content: article.ExcerptHtml,
-                itemAlternateLink: new Uri($"{siteOption.SiteUrl.TrimEnd('/')}/{article.RelativeDirectoryPath.TrimEnd('/')}/{article.FileName}"),
-                id: new Uri($"{siteOption.SiteUrl.TrimEnd('/')}/{article.RelativeDirectoryPath.TrimEnd('/')}/{article.FileName}").ToString(),
+                itemAlternateLink: new Uri(new Uri(siteOption.SiteUrl), article.RootRelativePath),
+                id: new Uri(new Uri(siteOption.SiteUrl), article.RootRelativePath).ToString(),
                 lastUpdatedTime: article.Published
             ))
         };
