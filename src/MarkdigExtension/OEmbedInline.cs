@@ -2,7 +2,9 @@ using Markdig.Syntax.Inlines;
 
 namespace BlogGenerator.MarkdigExtension;
 
-public class OEmbedInline(string htmlContent) : LeafInline
+public class OEmbedInline(string url) : LeafInline
 {
-    public string HtmlContent { get; } = htmlContent;
+    public string Url { get; } = url;
+
+    public string HtmlContent { get; set; } = string.Empty;
 }

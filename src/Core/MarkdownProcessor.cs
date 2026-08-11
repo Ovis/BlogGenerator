@@ -33,16 +33,12 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
     public async Task<List<Article>> ProcessMarkdownFilesAsync(string inputDir, string outputDir, string baseAbsolutePath)
     {
-        var articles = await Task.Run(() => Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories)
-            .AsParallel()
-            .Select(filePath => ProcessMarkdownFile(inputDir, outputDir, filePath, baseAbsolutePath))
-            .OrderByDescending(x => x.Published)
-            .ToList());
-
-        return articles;
+        var filePaths = Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories);
+        var articles = await Task.WhenAll(filePaths.Select(filePath => ProcessMarkdownFileAsync(inputDir, outputDir, filePath, baseAbsolutePath)));
+        return articles.OrderByDescending(x => x.Published).ToList();
     }
 
-    private Article ProcessMarkdownFile(string inputDir, string outputDir, string filePath, string baseAbsolutePath)
+    private async Task<Article> ProcessMarkdownFileAsync(string inputDir, string outputDir, string filePath, string baseAbsolutePath)
     {
         var relativePathExcludeFileName = Path.GetRelativePath(inputDir, Path.GetDirectoryName(filePath)!).Replace("\\", "/");
         relativePathExcludeFileName = relativePathExcludeFileName == "." ? string.Empty : relativePathExcludeFileName;
@@ -50,7 +46,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         var routeRelativePath = Path.Combine(baseAbsolutePath, relativePathExcludeFileName);
 
         // Markdownファイルの内容を読み込む
-        var (html, frontMatter) = ParseMarkdownWithFrontmatter(filePath, routeRelativePath);
+        var (html, frontMatter) = await ParseMarkdownWithFrontmatterAsync(filePath, routeRelativePath);
 
         return new Article(
             FileName: Path.ChangeExtension(Path.GetFileNameWithoutExtension(filePath), ".html"),
@@ -64,7 +60,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         );
     }
 
-    private (string html, Frontmatter frontMatter) ParseMarkdownWithFrontmatter(string path, string basePath)
+    private async Task<(string html, Frontmatter frontMatter)> ParseMarkdownWithFrontmatterAsync(string path, string basePath)
     {
         var markdown = File.ReadAllText(path);
 
@@ -101,6 +97,8 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
                 link.Url = Path.Combine(basePath, link.Url!).Replace("\\", "/");
             }
         }
+
+        await OEmbedDocumentResolver.ResolveAsync(markdownDocument);
 
         writer.GetStringBuilder().Clear();
         renderer.Render(markdownDocument);
