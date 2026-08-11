@@ -21,10 +21,12 @@ public class PageGenerator : IPageGenerator
 
     public async Task<string> GenerateSideBarHtmlAsync(List<Article> articles)
     {
+        var publishedArticles = GetPublishedArticles(articles).ToList();
+
         return await _razorLightEngine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
         {
             SiteOption = _siteOption,
-            Articles = articles
+            Articles = publishedArticles
         });
     }
 
@@ -55,8 +57,9 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateIndexPagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
     {
-        var pagedArticles = articles
-            .Where(r => r.Published != DateTimeOffset.MinValue)
+        var publishedArticles = GetPublishedArticles(articles);
+
+        var pagedArticles = publishedArticles
             .Select((article, index) => new { article, index })
             .GroupBy(x => x.index / 10)
             .Select(g => g.Select(x => x.article).ToList())
@@ -93,11 +96,13 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateTagPagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
     {
+        var publishedArticles = GetPublishedArticles(articles).ToArray();
+
         // タグごとの記事一覧（Publishedで昇順並び替え）を取得
-        var tagArticles = articles.SelectMany(x => x.Tags).Distinct().Select(tag => new
+        var tagArticles = publishedArticles.SelectMany(x => x.Tags).Distinct().Select(tag => new
         {
             Tag = tag,
-            Articles = articles.Where(x => x.Tags.Contains(tag)).OrderByDescending(x => x.Published).ToArray()
+            Articles = publishedArticles.Where(x => x.Tags.Contains(tag)).OrderByDescending(x => x.Published).ToArray()
         }).ToArray();
 
         // タグ一覧ページを生成
@@ -110,7 +115,7 @@ public class PageGenerator : IPageGenerator
             SiteOption = _siteOption,
             PageType = PageType.Tag,
             SideBarHtml = sideBarHtml,
-            Articles = articles,
+            Articles = publishedArticles,
         };
 
         var tagIndexHtml = await RenderLayoutTemplateAsync(tagIndexModel);
@@ -160,8 +165,10 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateArchivePagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
     {
+        var publishedArticles = GetPublishedArticles(articles);
+
         // 年月ごとの記事一覧（Publishedで昇順並び替え）を取得
-        var yearMonthArticles = articles.GroupBy(x => x.Published.ToString("yyyy/MM"))
+        var yearMonthArticles = publishedArticles.GroupBy(x => x.Published.ToString("yyyy/MM"))
             .Select(group => new
             {
                 YearMonth = group.Key,
@@ -173,7 +180,6 @@ public class PageGenerator : IPageGenerator
         foreach (var yearMonthArticle in yearMonthArticles)
         {
             var pagedArticles = yearMonthArticle.Articles
-                .Where(r => r.Published != DateTimeOffset.MinValue)
                 .Select((article, index) => new { article, index })
                 .GroupBy(x => x.index / 10)
                 .Select(g => g.Select(x => x.article).ToList())
@@ -220,4 +226,7 @@ public class PageGenerator : IPageGenerator
             ? await _razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
             : await _razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
     }
+
+    private static IEnumerable<Article> GetPublishedArticles(IEnumerable<Article> articles) =>
+        articles.Where(article => article.Published != DateTimeOffset.MinValue);
 }

@@ -37,8 +37,10 @@ public class PageGeneratorTests
 
         Assert.Multiple(() =>
         {
+            Assert.That(html, Does.Not.Contain("Draft article"));
             Assert.That(html, Does.Contain("/blog/tags/csharp"));
             Assert.That(html, Does.Contain("csharp (2)"));
+            Assert.That(html, Does.Not.Contain("draft (1)"));
             Assert.That(html, Does.Contain("/blog/2026/08"));
             Assert.That(html, Does.Not.Contain("/blog/1/01"));
             Assert.That(html, Does.Not.Contain("1-01 (1)"));
@@ -63,6 +65,7 @@ public class PageGeneratorTests
             Assert.That(File.Exists(tagIndexPath), Is.True);
             Assert.That(File.Exists(csharpTagPath), Is.True);
             Assert.That(File.Exists(dotnetTagPath), Is.True);
+            Assert.That(File.Exists(Path.Combine(outputDir, "tags", "draft", "index.html")), Is.False);
         });
 
         var tagIndexHtml = await File.ReadAllTextAsync(tagIndexPath);
@@ -73,8 +76,10 @@ public class PageGeneratorTests
             Assert.That(tagIndexHtml, Does.Contain("/blog/tags/csharp"));
             Assert.That(tagIndexHtml, Does.Contain("csharp (2)"));
             Assert.That(tagIndexHtml, Does.Contain("dotnet (1)"));
+            Assert.That(tagIndexHtml, Does.Not.Contain("draft (1)"));
             Assert.That(csharpTagHtml, Does.Contain("First article"));
             Assert.That(csharpTagHtml, Does.Contain("Second article"));
+            Assert.That(csharpTagHtml, Does.Not.Contain("Draft article"));
             Assert.That(csharpTagHtml, Does.Contain("/blog/tags/csharp"));
         });
     }
