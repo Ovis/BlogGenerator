@@ -1,8 +1,4 @@
-using System.Net;
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using BlogGenerator.MarkdigExtension.Models;
-using Hnx8.ReadJEnc;
 using Markdig;
 using Markdig.Helpers;
 using Markdig.Parsers;
@@ -25,7 +21,6 @@ public class OEmbedCardExtension : IMarkdownExtension
         Timeout = TimeSpan.FromSeconds(15) // 15秒でタイムアウト
     };
 
-    private static OEmbedProviderCatalog OEmbedProviderCatalog = new([]);
     private static OEmbedResolver _oEmbedResolver = new(new OEmbedProviderCatalog([]), HttpClient);
 
     public static OEmbedCardParser OEmbedCardParser { get; private set; } = null!;
@@ -41,10 +36,10 @@ public class OEmbedCardExtension : IMarkdownExtension
                 HttpClient.DefaultRequestHeaders.Add("User-Agent", "BlogGenerator");
 
                 // 初回実行時のみoEmbed Provider情報を取得
-                GetOEmbedProvidersJsonAsync().GetAwaiter().GetResult();
+                var providerCatalog = new OEmbedProviderCatalogLoader(HttpClient).LoadAsync().GetAwaiter().GetResult();
                 _isFirstCall = false;
 
-                _oEmbedResolver = new OEmbedResolver(OEmbedProviderCatalog, HttpClient);
+                _oEmbedResolver = new OEmbedResolver(providerCatalog, HttpClient);
                 OEmbedCardParser = new OEmbedCardParser(_oEmbedResolver);
             }
         }
@@ -61,68 +56,6 @@ public class OEmbedCardExtension : IMarkdownExtension
         {
             htmlRenderer.ObjectRenderers.Insert(0, new OEmbedInlineRenderer());
         }
-    }
-
-    private async ValueTask GetOEmbedProvidersJsonAsync()
-    {
-        try
-        {
-            var (isSuccess, content, _, _) = await GetWebsiteContentAsync("https://oembed.com/providers.json");
-
-            if (!isSuccess || string.IsNullOrEmpty(content))
-                return;
-
-            var jsonData = JsonSerializer.Deserialize<List<OEmbedProviderJson>>(content);
-
-            if (jsonData == null)
-                return;
-
-            OEmbedProviderCatalog = new OEmbedProviderCatalog(jsonData);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"oEmbed provider json could not be obtained. Error:{ex.Message}");
-        }
-    }
-
-    private async ValueTask<(bool isSuccess, string content, string mediaType, Exception? error)>
-        GetWebsiteContentAsync(string url)
-    {
-        try
-        {
-            var response = await HttpClient.GetAsync(url);
-
-            // リダイレクト処理
-            if (response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.MovedPermanently)
-            {
-                var redirectUrl = response.Headers.Location?.OriginalString;
-                if (redirectUrl != null)
-                {
-                    response = await HttpClient.GetAsync(redirectUrl);
-                }
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            if (response.IsSuccessStatusCode)
-            {
-                var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-                var byteArray = await response.Content.ReadAsByteArrayAsync();
-
-                ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
-                return (true, content, mediaType, null);
-            }
-        }
-        catch (TaskCanceledException e)
-        {
-            return (false, string.Empty, string.Empty, e);
-        }
-        catch (Exception e)
-        {
-            return (false, string.Empty, string.Empty, e);
-        }
-
-        return (false, string.Empty, string.Empty, null);
     }
 
     internal static void SetResolver(OEmbedResolver oEmbedResolver)
