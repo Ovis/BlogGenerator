@@ -30,8 +30,7 @@ public class OEmbedCardExtension : IMarkdownExtension
         Timeout = TimeSpan.FromSeconds(15) // 15秒でタイムアウト
     };
 
-    private static List<OEmbedProviderJson> _oEmbedProvidersJson = [];
-    private static readonly Dictionary<string, List<string>> OembedProviderDic = new();
+    private static OEmbedProviderCatalog OEmbedProviderCatalog = new([]);
 
     public static OEmbedCardParser OEmbedCardParser { get; private set; } = null!;
 
@@ -48,7 +47,7 @@ public class OEmbedCardExtension : IMarkdownExtension
                 GetOEmbedProvidersJsonAsync().GetAwaiter().GetResult();
                 _isFirstCall = false;
 
-                OEmbedCardParser = new OEmbedCardParser(_oEmbedProvidersJson, OembedProviderDic, HttpClient);
+                OEmbedCardParser = new OEmbedCardParser(OEmbedProviderCatalog, HttpClient);
             }
         }
 
@@ -76,21 +75,7 @@ public class OEmbedCardExtension : IMarkdownExtension
             if (jsonData == null)
                 return;
 
-            _oEmbedProvidersJson = jsonData;
-
-            foreach (var provider in jsonData)
-            {
-                var providerUrl = provider.ProviderUrl;
-
-                // 正規表現パターンの作成
-                var regexPatterns = provider.EndPoints
-                    .SelectMany(r => r.Schemes)
-                    .Select(url => url.Replace("*", @".*"))
-                    .ToList();
-
-                regexPatterns.Add($"{provider.ProviderUrl}.*");
-                OembedProviderDic.Add(providerUrl, regexPatterns);
-            }
+            OEmbedProviderCatalog = new OEmbedProviderCatalog(jsonData);
         }
         catch (Exception ex)
         {
@@ -188,8 +173,7 @@ public class OEmbedCardExtension : IMarkdownExtension
 /// </summary>
 public class OEmbedCardParser : InlineParser
 {
-    private static List<OEmbedProviderJson> _oEmbedProvidersJson = [];
-    private static Dictionary<string, List<string>> _oembedProviderDic = new();
+    private static OEmbedProviderCatalog _oEmbedProviderCatalog = new([]);
     private static HttpClient _httpClient = new();
     private static readonly ConcurrentDictionary<string, string> _oEmbedCache = new();
 
@@ -198,12 +182,9 @@ public class OEmbedCardParser : InlineParser
 
     private static readonly Regex OEmbedTagRegex = new(@"\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
 
-    public OEmbedCardParser(List<OEmbedProviderJson> oEmbedProvidersJson,
-                           Dictionary<string, List<string>> oEmbedProviderDic,
-                           HttpClient httpClient)
+    public OEmbedCardParser(OEmbedProviderCatalog oEmbedProviderCatalog, HttpClient httpClient)
     {
-        _oEmbedProvidersJson = oEmbedProvidersJson;
-        _oembedProviderDic = oEmbedProviderDic;
+        _oEmbedProviderCatalog = oEmbedProviderCatalog;
         _httpClient = httpClient;
         OpeningCharacters = ['['];
     }
@@ -443,14 +424,14 @@ public class OEmbedCardParser : InlineParser
     private async Task<(bool IsSuccess, string? RichLinkHtml, bool IsVideo)> GetRichLinkByOEmbedProviderAsync(string url)
     {
         // プロバイダURLの検索
-        var existProviderUrl = FindMatchingProviderUrl(url);
+        var existProviderUrl = _oEmbedProviderCatalog.FindMatchingProviderUrl(url);
         if (string.IsNullOrEmpty(existProviderUrl))
         {
             return (false, null, false);
         }
 
         // エンドポイントURL取得
-        var endpointUrl = GetProviderEndpointUrl(existProviderUrl, url);
+        var endpointUrl = _oEmbedProviderCatalog.GetProviderEndpointUrl(existProviderUrl, url);
         if (string.IsNullOrEmpty(endpointUrl))
         {
             return (false, null, false);
@@ -477,43 +458,6 @@ public class OEmbedCardParser : InlineParser
         }
 
         return (true, richLinkString, isVideo);
-    }
-
-    /// <summary>
-    /// URLに一致するプロバイダURLを検索
-    /// </summary>
-    private string FindMatchingProviderUrl(string url)
-    {
-        foreach (var provider in _oembedProviderDic)
-        {
-            if (provider.Value.Any(pattern => Regex.IsMatch(url, pattern)))
-            {
-                return provider.Key;
-            }
-        }
-        return string.Empty;
-    }
-
-    /// <summary>
-    /// 指定されたプロバイダとURLに対応するエンドポイントURLを取得
-    /// </summary>
-    private string GetProviderEndpointUrl(string providerUrl, string targetUrl)
-    {
-        var providers = _oEmbedProvidersJson.Where(r => r.ProviderUrl == providerUrl);
-
-        foreach (var provider in providers)
-        {
-            foreach (var endpoint in provider.EndPoints)
-            {
-                var regexPatterns = endpoint.Schemes.Select(s => s.Replace("*", @".*"));
-                if (regexPatterns.Any(pattern => Regex.IsMatch(targetUrl, pattern)))
-                {
-                    return endpoint.Url;
-                }
-            }
-        }
-
-        return string.Empty;
     }
 
     /// <summary>
