@@ -161,6 +161,23 @@ public class PageGeneratorTests
     }
 
     [Test]
+    public async Task 未公開記事の個別ページは生成しない()
+    {
+        var pageGenerator = CreatePageGenerator();
+        var outputDir = CreateOutputDirectory();
+        var articles = CreateArticles();
+
+        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, "<aside>stub</aside>");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(Path.Combine(outputDir, "posts", "first.html")), Is.True);
+            Assert.That(File.Exists(Path.Combine(outputDir, "posts", "second.html")), Is.True);
+            Assert.That(File.Exists(Path.Combine(outputDir, "drafts", "draft.html")), Is.False);
+        });
+    }
+
+    [Test]
     public async Task 危険文字を含むタグはURLエンコードで出力する()
     {
         var pageGenerator = CreatePageGenerator();
