@@ -186,7 +186,7 @@ public class Program
             // oEmbedキャッシュの保存
             if (!string.IsNullOrEmpty(oEmbedDir))
             {
-                await OEmbedCardExtension.SaveOEmbedCacheAsync(oEmbedDir);
+                await OEmbedCacheStore.SaveAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
             }
 
             Console.WriteLine($"[Completed] oEmbed Cache Save: {sw.Elapsed}");
