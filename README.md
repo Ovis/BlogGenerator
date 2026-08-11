@@ -28,7 +28,7 @@ BlogGeneratorは、Markdownファイルをもとに静的なブログサイト�
 基本的な使用方法：
 
 ```bash
-dotnet BlogGenerator.dll -i /path/to/input -o /path/to/output -t /path/to/theme
+dotnet BlogGenerator.dll --input /path/to/input --output /path/to/output --theme /path/to/theme
 ```
 
 dotnet toolを使用してインストールすることもできます：  
@@ -39,14 +39,14 @@ dotnet tool install -g eSheepDev.BlogGenerator
 dotnet toolを使用して実行する場合：
 
 ```bash
-bloggen -i /path/to/input -o /path/to/output -t /path/to/theme
+bloggen --input /path/to/input --output /path/to/output --theme /path/to/theme
 ```
 
 必須オプション：
 
 - `-i, --input, /input` - Markdownファイルを含む入力フォルダーを指定します
 - `-o, --output, /output` - HTMLファイルを出力するフォルダーを指定します
-- `-t, --theme, /theme` - テーマフォルダーを指定します
+- `--theme, /theme` - テーマフォルダーを指定します
 
 オプション引数：
 
@@ -121,7 +121,7 @@ IsFixedPage: false
 ここから記事の本文...
 ```
 
-`IsFiexedPage` は固定ページの場合に `true` に設定します。通常時は省略可能です。
+`IsFixedPage` は固定ページの場合に `true` に設定します。通常時は省略可能です。
 
 
 ### ページ分割
