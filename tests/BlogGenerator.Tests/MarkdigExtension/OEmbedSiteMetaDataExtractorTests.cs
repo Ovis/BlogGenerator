@@ -65,6 +65,30 @@ public class OEmbedSiteMetaDataExtractorTests
     }
 
     [Test]
+    public void 相対oEmbedリンクは元ページ基準で絶対URL化する()
+    {
+        const string html = """
+            <html>
+              <head>
+                <link type="application/json+oembed" href="/oembed?url=post" />
+                <link type="application/xml+oembed" href="oembed.xml" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var extractor = new OEmbedSiteMetaDataExtractor(new HttpClient());
+
+        var metaData = extractor.Parse("https://example.com/posts/hello", html);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(metaData.OembedJson, Is.EqualTo("https://example.com/oembed?url=post"));
+            Assert.That(metaData.OembedXml, Is.EqualTo("https://example.com/posts/oembed.xml"));
+        });
+    }
+
+    [Test]
     public void oEmbedエンドポイントはjsonを優先して解決する()
     {
         var metaData = new BlogGenerator.MarkdigExtension.Models.SiteMetaData
