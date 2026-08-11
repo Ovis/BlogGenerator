@@ -9,6 +9,7 @@ using Markdig.Helpers;
 using Markdig.Parsers;
 using Markdig.Renderers;
 using Markdig.Renderers.Html;
+using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 
 namespace BlogGenerator.MarkdigExtension;
@@ -185,6 +186,11 @@ public class OEmbedCardParser : InlineParser
         OpeningCharacters = ['['];
     }
 
+    public static ValueTask<string> ResolveHtmlAsync(string url)
+    {
+        return _oEmbedResolver.GetOEmbedHtmlAsync(url);
+    }
+
     public override bool Match(InlineProcessor processor, ref StringSlice slice)
     {
         // 先頭文字チェック - 空白でなければ不一致
@@ -202,10 +208,9 @@ public class OEmbedCardParser : InlineParser
         }
 
         var url = match.Groups["url"].Value;
-        var htmlContent = _oEmbedResolver.GetOEmbedHtmlAsync(url).GetAwaiter().GetResult();
 
         // インラインとして処理
-        processor.Inline = new OEmbedInline(htmlContent)
+        processor.Inline = new OEmbedInline(url)
         {
             Span =
                 {
@@ -218,5 +223,19 @@ public class OEmbedCardParser : InlineParser
         processor.Inline.Span.End = processor.Inline.Span.Start + match.Length - 1;
         slice.Start += match.Length;
         return true;
+    }
+}
+
+public static class OEmbedDocumentResolver
+{
+    /// <summary>
+    /// Markdown文書内のoEmbedノードへ解決済みHTMLを設定する
+    /// </summary>
+    public static async Task ResolveAsync(MarkdownDocument markdownDocument)
+    {
+        foreach (var oEmbedInline in markdownDocument.Descendants<OEmbedInline>())
+        {
+            oEmbedInline.HtmlContent = await OEmbedCardParser.ResolveHtmlAsync(oEmbedInline.Url);
+        }
     }
 }
