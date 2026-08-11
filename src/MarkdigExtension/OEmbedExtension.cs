@@ -257,7 +257,7 @@ public class OEmbedCardParser : InlineParser
         // GitHub Gist特別処理
         if (url.Contains("gist.github.com"))
         {
-            html = SetParagraph(CreateGistEmbedHtml(url));
+            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateGistEmbed(url));
             _oEmbedCache[url] = html;
             return html;
         }
@@ -266,7 +266,7 @@ public class OEmbedCardParser : InlineParser
         var (isProviderSupported, richLinkHtml, isVideo) = await GetRichLinkByOEmbedProviderAsync(url);
         if (isProviderSupported)
         {
-            html = SetParagraph(richLinkHtml ?? string.Empty, isVideo);
+            html = OEmbedHtmlFactory.WrapInParagraph(richLinkHtml ?? string.Empty, isVideo);
             _oEmbedCache[url] = html;
             return html;
         }
@@ -275,7 +275,7 @@ public class OEmbedCardParser : InlineParser
         var (isMetaDataSuccess, metaData) = await GetSiteMetaDataAsync(url);
         if (!isMetaDataSuccess)
         {
-            html = SetParagraph(CreateStandardLinkHtml(url));
+            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
             _oEmbedCache[url] = html;
             return html;
         }
@@ -287,7 +287,7 @@ public class OEmbedCardParser : InlineParser
             var (isSuccess, embedHtml, _, _) = await GetEmbedResultAsync(oEmbedEndpoint, string.Empty);
             if (isSuccess && !string.IsNullOrEmpty(embedHtml))
             {
-                html = SetParagraph(embedHtml);
+                html = OEmbedHtmlFactory.WrapInParagraph(embedHtml);
                 _oEmbedCache[url] = html;
                 return html;
             }
@@ -296,13 +296,13 @@ public class OEmbedCardParser : InlineParser
         // 4. OGP情報による生成
         if (!string.IsNullOrEmpty(metaData.OgTitle) && !string.IsNullOrEmpty(metaData.OgUrl))
         {
-            html = SetParagraph(CreateOgpRichLink(url, metaData));
+            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateOgpCard(url, metaData));
             _oEmbedCache[url] = html;
             return html;
         }
 
         // 5. 標準リンク
-        html = SetParagraph(CreateStandardLinkHtml(url));
+        html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
         _oEmbedCache[url] = html;
         return html;
     }
@@ -319,45 +319,6 @@ public class OEmbedCardParser : InlineParser
             return metaData.OembedXml;
 
         return string.Empty;
-    }
-
-    /// <summary>
-    /// OGPデータによるリッチリンク生成
-    /// </summary>
-    private static string CreateOgpRichLink(string url, SiteMetaData metaData)
-    {
-        var noSchemeUrl = url.Replace($"{new Uri(url).Scheme}://", "");
-
-        return new StringBuilder()
-            .Append($"<div class=\"bcard-wrapper\">")
-            .Append($"<span class=\"bcard-header withgfav\">")
-            .Append($"<div class=\"bcard-favicon\" style=\"background-image: url(https://www.google.com/s2/favicons?domain={url})\"></div>")
-            .Append($"<div class=\"bcard-site\">")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{metaData.OgSiteName}</a>")
-            .Append($"</div>")
-            .Append($"<div class=\"bcard-url\">")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{url}</a>")
-            .Append($"</div>")
-            .Append($"</span>")
-            .Append($"<span class=\"bcard-main withogimg\">")
-            .Append($"<div class=\"bcard-title\">")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">")
-            .Append($"{metaData.Title}")
-            .Append($"</a>")
-            .Append($"</div>")
-            .Append($"<div class=\"bcard-description\">")
-            .Append($"{metaData.OgDescription}")
-            .Append($"</div>")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">")
-            .Append($"<div class=\"bcard-img\" style=\"background-image: url({metaData.OgImage})\"></div>")
-            .Append($"</a>")
-            .Append($"</span>")
-            .Append($"<span>")
-            .Append($"<a href=\"//b.hatena.ne.jp/entry/s/{noSchemeUrl}\" ref=\"nofollow\" target=\"_blank\">" +
-                    $"<img src=\"//b.st-hatena.com/entry/image/{url}\" alt=\"[はてなブックマークで表示]\"></a>")
-            .Append($"</span>")
-            .Append($"</div>")
-            .ToString();
     }
 
     /// <summary>
@@ -651,44 +612,4 @@ public class OEmbedCardParser : InlineParser
         }
     }
 
-    /// <summary>
-    /// HTMLをpタグで囲む
-    /// </summary>
-    private static string SetParagraph(string linkHtml, bool isVideo = false)
-    {
-        return new StringBuilder()
-            .Append("<p")
-            .Append(isVideo ? " class='oembed-video'" : "")
-            .Append(">")
-            .Append(linkHtml)
-            .Append("</p>")
-            .ToString();
-    }
-
-    /// <summary>
-    /// 標準リンクHTML生成
-    /// </summary>
-    private static string CreateStandardLinkHtml(string url)
-    {
-        return new StringBuilder()
-            .Append("<a href=\"")
-            .Append(url)
-            .Append("\" target=\"_blank\">")
-            .Append(url)
-            .Append("</a>")
-            .ToString();
-    }
-
-    /// <summary>
-    /// GitHub GistコンテンツHTML生成
-    /// </summary>
-    private static string CreateGistEmbedHtml(string url)
-    {
-        return new StringBuilder()
-            .Append("<script src=\"")
-            .Append(url)
-            .Append(".js\">")
-            .Append("</script>")
-            .ToString();
-    }
 }
