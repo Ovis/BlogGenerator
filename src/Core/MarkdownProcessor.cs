@@ -12,7 +12,11 @@ namespace BlogGenerator.Core;
 public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
     : IMarkdownProcessor
 {
-    private readonly MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
+    private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder()
+        .UseYamlFrontMatter()
+        .Build();
+
+    private readonly MarkdownPipeline _contentPipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
         .Use<OEmbedCardExtension>()
@@ -66,9 +70,9 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
         var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
-        _markdownPipeline.Setup(renderer);
+        _contentPipeline.Setup(renderer);
 
-        var document = Markdown.Parse(markdown, _markdownPipeline);
+        var document = Markdown.Parse(markdown, _frontMatterPipeline);
         var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
 
         var frontMatter = new Frontmatter();
@@ -86,7 +90,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
             markdownContent = markdown[(yamlEndIndex + 1)..].TrimStart();
         }
 
-        var markdownDocument = Markdown.Parse(markdownContent, _markdownPipeline);
+        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline);
 
         // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
