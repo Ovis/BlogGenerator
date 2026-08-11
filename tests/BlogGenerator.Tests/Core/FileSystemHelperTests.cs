@@ -57,6 +57,28 @@ public class FileSystemHelperTests
     }
 
     [Test]
+    public async Task 大文字拡張子のMarkdownは静的ファイルとしてコピーしない()
+    {
+        var inputDir = Path.Combine(_testRootPath, "input");
+        var outputDir = Path.Combine(_testRootPath, "output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        await File.WriteAllTextAsync(Path.Combine(inputDir, "HELLO.MD"), "# article");
+        await File.WriteAllTextAsync(Path.Combine(inputDir, "note.txt"), "memo");
+
+        var fileSystemHelper = new FileSystemHelper();
+
+        fileSystemHelper.CopyContentFiles(inputDir, outputDir);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(Path.Combine(outputDir, "HELLO.MD")), Is.False);
+            Assert.That(File.Exists(Path.Combine(outputDir, "note.txt")), Is.True);
+        });
+    }
+
+    [Test]
     public void 共有違反とロック違反はリトライ対象として判定する()
     {
         var method = typeof(FileSystemHelper)

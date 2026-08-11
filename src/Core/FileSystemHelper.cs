@@ -25,7 +25,8 @@ public class FileSystemHelper : IFileSystemHelper
     {
         foreach (var filePath in Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories))
         {
-            if (Path.GetExtension(filePath) == ".md" || Path.GetFileName(filePath).StartsWith("."))
+            if (string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase) ||
+                Path.GetFileName(filePath).StartsWith("."))
             {
                 continue;
             }
