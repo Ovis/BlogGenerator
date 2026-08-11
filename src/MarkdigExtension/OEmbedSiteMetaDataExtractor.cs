@@ -49,8 +49,8 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
             OgType = document.QuerySelector("meta[property='og:type']")?.GetAttribute("content") ?? string.Empty,
             OgUrl = document.QuerySelector("meta[property='og:url']")?.GetAttribute("content") ?? string.Empty,
             OgSiteName = document.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content") ?? string.Empty,
-            OembedJson = document.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href") ?? string.Empty,
-            OembedXml = GetXmlOembedLink(document)
+            OembedJson = ResolveUrl(url, document.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href")),
+            OembedXml = ResolveUrl(url, GetXmlOembedLink(document))
         };
     }
 
@@ -78,6 +78,23 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
             return xmlLink;
 
         return document.QuerySelector("link[type='text/xml+oembed']")?.GetAttribute("href") ?? string.Empty;
+    }
+
+    private static string ResolveUrl(string baseUrl, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return string.Empty;
+        }
+
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        return Uri.TryCreate(new Uri(baseUrl), candidate, out var relativeUri)
+            ? relativeUri.ToString()
+            : candidate;
     }
 
     /// <summary>

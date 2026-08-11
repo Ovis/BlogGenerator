@@ -108,6 +108,45 @@ public class OEmbedResolverTests
         });
     }
 
+    [Test]
+    public async Task discoveryの相対oembedリンクを絶対URLへ解決して取得できる()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string pageHtml = """
+            <html>
+              <head>
+                <title>Example title</title>
+                <link type="application/json+oembed" href="/oembed?url=post" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.ToString() == targetUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(pageHtml, Encoding.UTF8, "text/html")
+                };
+            }
+
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo("https://example.com/oembed?url=post"));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"rich","html":"<blockquote>embed</blockquote>"}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
+    }
+
     private sealed class ThrowIfCalledHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
