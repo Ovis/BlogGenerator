@@ -106,6 +106,51 @@ public class PageGeneratorTests
         });
     }
 
+    [Test]
+    public async Task 記事ページは通常記事と固定ページでヘッダー表示を切り替える()
+    {
+        var pageGenerator = CreatePageGenerator();
+        var outputDir = CreateOutputDirectory();
+        var articles = new List<Article>
+        {
+            new(
+                FileName: "article.html",
+                Title: "Normal article",
+                Body: "<p>Normal body</p>",
+                Tags: ["csharp"],
+                Published: DateTimeOffset.Parse("2026-08-11T10:00:00+09:00"),
+                RelativeDirectoryPath: "posts",
+                RootRelativeDirectoryPath: "/blog/posts",
+                IsFixedPage: false),
+            new(
+                FileName: "about.html",
+                Title: "About page",
+                Body: "<p>Fixed body</p>",
+                Tags: ["profile"],
+                Published: DateTimeOffset.Parse("2026-08-11T10:00:00+09:00"),
+                RelativeDirectoryPath: string.Empty,
+                RootRelativeDirectoryPath: "/blog",
+                IsFixedPage: true)
+        };
+
+        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, "<aside>stub</aside>");
+
+        var normalArticleHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "article.html"));
+        var fixedPageHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "about.html"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(normalArticleHtml, Does.Contain("Normal article"));
+            Assert.That(normalArticleHtml, Does.Contain("2026/08/11 10:00"));
+            Assert.That(normalArticleHtml, Does.Contain("/blog/tags/csharp"));
+            Assert.That(normalArticleHtml, Does.Contain("pt-0"));
+            Assert.That(fixedPageHtml, Does.Contain("Fixed body"));
+            Assert.That(fixedPageHtml, Does.Not.Contain("fa-calendar-alt"));
+            Assert.That(fixedPageHtml, Does.Not.Contain("fa-tags"));
+            Assert.That(fixedPageHtml, Does.Not.Contain("pt-0"));
+        });
+    }
+
     private PageGenerator CreatePageGenerator()
     {
         var templatePath = Path.Combine(GetRepositoryRootPath(), "src", "TemplateSample");
