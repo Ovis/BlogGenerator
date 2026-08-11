@@ -32,7 +32,7 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateArticlePagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
     {
-        foreach (var article in articles)
+        foreach (var article in GetPublishedArticles(articles))
         {
             // Usage
             var outputFilePathWithoutExtension = Path.Combine(outputDir, article.RelativeDirectoryPath, article.FileName);
