@@ -130,8 +130,7 @@ public class MarkdownProcessorTests
             {
                 SiteUrl = "https://example.com/blog/"
             },
-            string.Empty,
-            new FileSystemHelper());
+            string.Empty);
     }
 
     private (string inputDir, string outputDir) CreateInputAndOutputDirectories()

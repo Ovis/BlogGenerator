@@ -9,7 +9,7 @@ using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
-public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSystemHelper fileSystemHelper)
+public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
     : IMarkdownProcessor
 {
     private readonly MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
@@ -47,9 +47,6 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSys
 
         // Markdownファイルの内容を読み込む
         var (html, frontMatter) = ParseMarkdownWithFrontmatter(filePath, routeRelativePath);
-
-        // コンテンツ系ファイルはMarkdownファイルを除いてそのままコピー
-        fileSystemHelper.CopyContentFile(inputDir, outputDir, filePath);
 
         return new Article(
             FileName: Path.ChangeExtension(Path.GetFileNameWithoutExtension(filePath), ".html"),

@@ -152,6 +152,11 @@ public class Program
 
             Console.WriteLine($"[Completed] Theme Files Copy: {sw.Elapsed}");
 
+            // 入力配下の静的ファイルをコピー
+            fileSystemHelper.CopyContentFiles(input.FullName, output.FullName);
+
+            Console.WriteLine($"[Completed] Content Files Copy: {sw.Elapsed}");
+
             // 記事の処理
             var articles = await markdownProcessor.ProcessMarkdownFilesAsync(
                 input.FullName,
