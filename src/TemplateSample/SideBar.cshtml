@@ -95,7 +95,9 @@
     <h1 class="title is-5">Archive</h1>
     <nav class="panel panel-white">
         @{
-            var yearMonthCount = model.Articles.GroupBy(x => new { Year = x.Published.Year, Month = x.Published.Month })
+            var yearMonthCount = model.Articles
+            .Where(x => x.Published != DateTimeOffset.MinValue)
+            .GroupBy(x => new { Year = x.Published.Year, Month = x.Published.Month })
             .Select(group => new
             {
                 Year = group.Key.Year,
