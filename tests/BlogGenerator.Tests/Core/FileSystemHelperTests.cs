@@ -1,4 +1,5 @@
-﻿using BlogGenerator.Core;
+using System.Reflection;
+using BlogGenerator.Core;
 using NUnit.Framework;
 
 namespace BlogGenerator.Tests.Core;
@@ -53,5 +54,40 @@ public class FileSystemHelperTests
             Assert.That(File.Exists(Path.Combine(outputDir, "posts", "hello.md")), Is.False);
             Assert.That(File.Exists(Path.Combine(outputDir, ".draft")), Is.False);
         });
+    }
+
+    [Test]
+    public void 共有違反とロック違反はリトライ対象として判定する()
+    {
+        var method = typeof(FileSystemHelper)
+            .GetMethod("IsRetryableCopyIOException", BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        var sharingViolation = new TestIOException(unchecked((int)0x80070020));
+        var lockViolation = new TestIOException(unchecked((int)0x80070021));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That((bool)method.Invoke(null, [sharingViolation])!, Is.True);
+            Assert.That((bool)method.Invoke(null, [lockViolation])!, Is.True);
+        });
+    }
+
+    [Test]
+    public void それ以外のIOExceptionはリトライ対象にしない()
+    {
+        var method = typeof(FileSystemHelper)
+            .GetMethod("IsRetryableCopyIOException", BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        var accessDenied = new TestIOException(unchecked((int)0x80070005));
+
+        Assert.That((bool)method.Invoke(null, [accessDenied])!, Is.False);
+    }
+
+    private sealed class TestIOException : IOException
+    {
+        public TestIOException(int hResult)
+        {
+            HResult = hResult;
+        }
     }
 }
