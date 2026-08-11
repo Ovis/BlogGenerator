@@ -152,6 +152,44 @@ public class PageGeneratorTests
         });
     }
 
+    [Test]
+    public async Task 危険文字を含むタグはURLエンコードで出力する()
+    {
+        var pageGenerator = CreatePageGenerator();
+        var outputDir = CreateOutputDirectory();
+        const string tagName = "C#/fizz buzz?";
+        const string encodedTag = "C%23%2Ffizz%20buzz%3F";
+        var articles = new List<Article>
+        {
+            new(
+                FileName: "tagged.html",
+                Title: "Tagged article",
+                Body: "<p>Tagged body</p>",
+                Tags: [tagName],
+                Published: DateTimeOffset.Parse("2026-08-11T10:00:00+09:00"),
+                RelativeDirectoryPath: "posts",
+                RootRelativeDirectoryPath: "/blog/posts",
+                IsFixedPage: false)
+        };
+
+        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, "<aside>stub</aside>");
+
+        var tagIndexHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "index.html"));
+        var encodedTagPagePath = Path.Combine(outputDir, "tags", encodedTag, "index.html");
+        var encodedTagPageHtml = await File.ReadAllTextAsync(encodedTagPagePath);
+        var articleHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "tagged.html"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(encodedTagPagePath), Is.True);
+            Assert.That(tagIndexHtml, Does.Contain($"/blog/tags/{encodedTag}"));
+            Assert.That(encodedTagPageHtml, Does.Contain($"/blog/tags/{encodedTag}"));
+            Assert.That(articleHtml, Does.Contain($"/blog/tags/{encodedTag}"));
+            Assert.That(tagIndexHtml, Does.Contain("C#/fizz buzz? (1)"));
+        });
+    }
+
     private PageGenerator CreatePageGenerator()
     {
         var templatePath = Path.Combine(GetRepositoryRootPath(), "src", "TemplateSample");
