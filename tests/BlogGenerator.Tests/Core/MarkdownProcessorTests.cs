@@ -102,6 +102,30 @@ public class MarkdownProcessorTests
     }
 
     [Test]
+    public async Task 大文字拡張子のMarkdownも記事として変換できる()
+    {
+        OEmbedTestState.Prepare();
+
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        var articlePath = Path.Combine(inputDir, "HELLO.MD");
+        await File.WriteAllTextAsync(articlePath, "大文字拡張子です");
+
+        var processor = CreateProcessor();
+
+        var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.That(articles, Has.Count.EqualTo(1));
+
+        var article = articles[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(article.FileName, Is.EqualTo("HELLO.html"));
+            Assert.That(article.RelativeDirectoryPath, Is.EqualTo(string.Empty));
+            Assert.That(article.Body, Does.Contain("<p>大文字拡張子です</p>"));
+        });
+    }
+
+    [Test]
     public async Task oEmbedキャッシュ済みURLを本文へ展開できる()
     {
         const string targetUrl = "https://example.com/post";

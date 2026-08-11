@@ -35,7 +35,9 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
     public async Task<List<Article>> ProcessMarkdownFilesAsync(string inputDir, string outputDir, string baseAbsolutePath)
     {
-        var filePaths = Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories);
+        var filePaths = Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories)
+            .Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
         var articles = await Task.WhenAll(filePaths.Select(filePath => ProcessMarkdownFileAsync(inputDir, outputDir, filePath, baseAbsolutePath)));
         return articles.OrderByDescending(x => x.Published).ToList();
     }
