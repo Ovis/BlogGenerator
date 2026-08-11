@@ -20,7 +20,7 @@
 
     var ogUrl = model.PageType switch
     {
-        PageType.Article => model.GeneratePath(model.Articles.First().RootRelativePath),
+        PageType.Article => model.GenerateSiteUrl(model.Articles.First().RootRelativePath),
         _ => model.SiteOption.SiteUrl
     };
 
