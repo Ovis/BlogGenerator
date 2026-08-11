@@ -98,7 +98,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
             }
         }
 
-        await OEmbedDocumentResolver.ResolveAsync(markdownDocument);
+        await OEmbedDocumentResolver.ResolveAsync(markdownDocument, OEmbedCardExtension.OEmbedResolver);
 
         writer.GetStringBuilder().Clear();
         renderer.Render(markdownDocument);

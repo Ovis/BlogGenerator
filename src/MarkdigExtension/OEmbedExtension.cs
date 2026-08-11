@@ -27,8 +27,10 @@ public class OEmbedCardExtension : IMarkdownExtension
     };
 
     private static OEmbedProviderCatalog OEmbedProviderCatalog = new([]);
+    private static OEmbedResolver _oEmbedResolver = new(new OEmbedProviderCatalog([]), HttpClient);
 
     public static OEmbedCardParser OEmbedCardParser { get; private set; } = null!;
+    public static OEmbedResolver OEmbedResolver => _oEmbedResolver;
 
     public void Setup(MarkdownPipelineBuilder pipeline)
     {
@@ -43,7 +45,8 @@ public class OEmbedCardExtension : IMarkdownExtension
                 GetOEmbedProvidersJsonAsync().GetAwaiter().GetResult();
                 _isFirstCall = false;
 
-                OEmbedCardParser = new OEmbedCardParser(new OEmbedResolver(OEmbedProviderCatalog, HttpClient));
+                _oEmbedResolver = new OEmbedResolver(OEmbedProviderCatalog, HttpClient);
+                OEmbedCardParser = new OEmbedCardParser(_oEmbedResolver);
             }
         }
 
@@ -166,6 +169,11 @@ public class OEmbedCardExtension : IMarkdownExtension
             Console.WriteLine($"Error loading OEmbed cache: {ex.Message}");
         }
     }
+
+    internal static void SetResolver(OEmbedResolver oEmbedResolver)
+    {
+        _oEmbedResolver = oEmbedResolver;
+    }
 }
 
 /// <summary>
@@ -173,22 +181,15 @@ public class OEmbedCardExtension : IMarkdownExtension
 /// </summary>
 public class OEmbedCardParser : InlineParser
 {
-    private static OEmbedResolver _oEmbedResolver = new(new OEmbedProviderCatalog([]), new HttpClient());
-
     // OEmbedCacheをパブリックプロパティとして公開
-    public static ConcurrentDictionary<string, string> OEmbedCache => _oEmbedResolver.OEmbedCache;
+    public static ConcurrentDictionary<string, string> OEmbedCache => OEmbedCardExtension.OEmbedResolver.OEmbedCache;
 
     private static readonly Regex OEmbedTagRegex = new(@"\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
 
     public OEmbedCardParser(OEmbedResolver oEmbedResolver)
     {
-        _oEmbedResolver = oEmbedResolver;
+        OEmbedCardExtension.SetResolver(oEmbedResolver);
         OpeningCharacters = ['['];
-    }
-
-    public static ValueTask<string> ResolveHtmlAsync(string url)
-    {
-        return _oEmbedResolver.GetOEmbedHtmlAsync(url);
     }
 
     public override bool Match(InlineProcessor processor, ref StringSlice slice)
@@ -223,19 +224,5 @@ public class OEmbedCardParser : InlineParser
         processor.Inline.Span.End = processor.Inline.Span.Start + match.Length - 1;
         slice.Start += match.Length;
         return true;
-    }
-}
-
-public static class OEmbedDocumentResolver
-{
-    /// <summary>
-    /// Markdown文書内のoEmbedノードへ解決済みHTMLを設定する
-    /// </summary>
-    public static async Task ResolveAsync(MarkdownDocument markdownDocument)
-    {
-        foreach (var oEmbedInline in markdownDocument.Descendants<OEmbedInline>())
-        {
-            oEmbedInline.HtmlContent = await OEmbedCardParser.ResolveHtmlAsync(oEmbedInline.Url);
-        }
     }
 }
