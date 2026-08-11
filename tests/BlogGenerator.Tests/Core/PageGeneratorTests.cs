@@ -28,7 +28,7 @@ public class PageGeneratorTests
     }
 
     [Test]
-    public async Task サイドバーは未設定公開日のアーカイブリンクも出力する()
+    public async Task サイドバーのアーカイブ一覧は未設定公開日を除外する()
     {
         var pageGenerator = CreatePageGenerator();
         var articles = CreateArticles();
@@ -39,8 +39,9 @@ public class PageGeneratorTests
         {
             Assert.That(html, Does.Contain("/blog/tags/csharp"));
             Assert.That(html, Does.Contain("csharp (2)"));
-            Assert.That(html, Does.Contain("/blog/1/01"));
-            Assert.That(html, Does.Contain("1-01 (1)"));
+            Assert.That(html, Does.Contain("/blog/2026/08"));
+            Assert.That(html, Does.Not.Contain("/blog/1/01"));
+            Assert.That(html, Does.Not.Contain("1-01 (1)"));
         });
     }
 
