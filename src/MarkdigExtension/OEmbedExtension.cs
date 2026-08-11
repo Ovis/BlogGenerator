@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -126,50 +125,6 @@ public class OEmbedCardExtension : IMarkdownExtension
         return (false, string.Empty, string.Empty, null);
     }
 
-    /// <summary>
-    /// キャッシュをJSONファイルに保存する
-    /// </summary>
-    public static async Task SaveOEmbedCacheAsync(string filePath)
-    {
-        try
-        {
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            var json = JsonSerializer.Serialize(OEmbedCardParser.OEmbedCache, options);
-            await File.WriteAllTextAsync(filePath, json);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error saving OEmbed cache: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// JSONファイルからキャッシュを読み込む
-    /// </summary>
-    public static async Task LoadOEmbedCacheAsync(string filePath)
-    {
-        if (!File.Exists(filePath))
-            return;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(filePath);
-            var loadedCache = JsonSerializer.Deserialize<ConcurrentDictionary<string, string>>(json);
-
-            if (loadedCache != null)
-            {
-                foreach (var item in loadedCache)
-                {
-                    OEmbedCardParser.OEmbedCache.TryAdd(item.Key, item.Value);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading OEmbed cache: {ex.Message}");
-        }
-    }
-
     internal static void SetResolver(OEmbedResolver oEmbedResolver)
     {
         _oEmbedResolver = oEmbedResolver;
@@ -181,9 +136,6 @@ public class OEmbedCardExtension : IMarkdownExtension
 /// </summary>
 public class OEmbedCardParser : InlineParser
 {
-    // OEmbedCacheをパブリックプロパティとして公開
-    public static ConcurrentDictionary<string, string> OEmbedCache => OEmbedCardExtension.OEmbedResolver.OEmbedCache;
-
     private static readonly Regex OEmbedTagRegex = new(@"\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
 
     public OEmbedCardParser(OEmbedResolver oEmbedResolver)

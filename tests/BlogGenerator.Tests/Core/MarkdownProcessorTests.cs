@@ -184,13 +184,13 @@ public class MarkdownProcessorTests
                 .GetSetMethod(nonPublic: true)!
                 .Invoke(null, [parser]);
 
-            OEmbedCardParser.OEmbedCache.Clear();
+            OEmbedCardExtension.OEmbedResolver.OEmbedCache.Clear();
 
             if (cachedEntries != null)
             {
                 foreach (var cachedEntry in cachedEntries)
                 {
-                    OEmbedCardParser.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
+                    OEmbedCardExtension.OEmbedResolver.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
                 }
             }
         }

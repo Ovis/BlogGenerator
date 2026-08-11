@@ -27,7 +27,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
     {
         if (!string.IsNullOrEmpty(oEmbedDir))
         {
-            await OEmbedCardExtension.LoadOEmbedCacheAsync(oEmbedDir);
+            await OEmbedCacheStore.LoadAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
         }
     }
 
