@@ -3,6 +3,8 @@ using System.Reflection;
 using BlogGenerator.Core;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
+using Markdig.Helpers;
+using Markdig.Parsers;
 using NUnit.Framework;
 
 namespace BlogGenerator.Tests.Core;
@@ -123,6 +125,28 @@ public class MarkdownProcessorTests
         Assert.That(articles[0].Body, Does.Contain(expectedHtml));
     }
 
+    [Test]
+    public async Task oEmbed記法を含む本文は1回だけ評価される()
+    {
+        var countingParser = new CountingOEmbedCardParser();
+        OEmbedTestState.Prepare(parser: countingParser);
+
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        var articlePath = Path.Combine(inputDir, "post.md");
+        await File.WriteAllTextAsync(articlePath, """
+            ---
+            Title: Count parser
+            ---
+            [oembed:"https://example.com/post"]
+            """);
+
+        var processor = CreateProcessor();
+
+        await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.That(countingParser.MatchCallCount, Is.EqualTo(1));
+    }
+
     private MarkdownProcessor CreateProcessor()
     {
         return new MarkdownProcessor(
@@ -144,9 +168,10 @@ public class MarkdownProcessorTests
 
     private static class OEmbedTestState
     {
-        public static void Prepare(IDictionary<string, string>? cachedEntries = null)
+        public static void Prepare(
+            IDictionary<string, string>? cachedEntries = null,
+            OEmbedCardParser? parser = null)
         {
-            var parser = new OEmbedCardParser([], new Dictionary<string, List<string>>(), new HttpClient());
             OEmbedCardParser.OEmbedCache.Clear();
 
             if (cachedEntries != null)
@@ -157,6 +182,8 @@ public class MarkdownProcessorTests
                 }
             }
 
+            parser ??= new OEmbedCardParser([], new Dictionary<string, List<string>>(), new HttpClient());
+
             // MarkdownProcessor生成時の初回プロバイダ取得を避け、テストを外部通信から切り離す
             typeof(OEmbedCardExtension)
                 .GetField("_isFirstCall", BindingFlags.Static | BindingFlags.NonPublic)!
@@ -166,6 +193,18 @@ public class MarkdownProcessorTests
                 .GetProperty(nameof(OEmbedCardExtension.OEmbedCardParser), BindingFlags.Static | BindingFlags.Public)!
                 .GetSetMethod(nonPublic: true)!
                 .Invoke(null, [parser]);
+        }
+    }
+
+    private sealed class CountingOEmbedCardParser()
+        : OEmbedCardParser([], new Dictionary<string, List<string>>(), new HttpClient())
+    {
+        public int MatchCallCount { get; private set; }
+
+        public override bool Match(InlineProcessor processor, ref StringSlice slice)
+        {
+            MatchCallCount++;
+            return false;
         }
     }
 }
