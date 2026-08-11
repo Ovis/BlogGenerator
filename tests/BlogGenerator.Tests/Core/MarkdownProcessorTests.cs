@@ -182,7 +182,7 @@ public class MarkdownProcessorTests
                 }
             }
 
-            parser ??= new OEmbedCardParser([], new Dictionary<string, List<string>>(), new HttpClient());
+            parser ??= new OEmbedCardParser(new OEmbedProviderCatalog([]), new HttpClient());
 
             // MarkdownProcessor生成時の初回プロバイダ取得を避け、テストを外部通信から切り離す
             typeof(OEmbedCardExtension)
@@ -197,7 +197,7 @@ public class MarkdownProcessorTests
     }
 
     private sealed class CountingOEmbedCardParser()
-        : OEmbedCardParser([], new Dictionary<string, List<string>>(), new HttpClient())
+        : OEmbedCardParser(new OEmbedProviderCatalog([]), new HttpClient())
     {
         public int MatchCallCount { get; private set; }
 
