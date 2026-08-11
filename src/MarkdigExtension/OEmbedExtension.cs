@@ -8,6 +8,7 @@ using Markdig;
 using Markdig.Helpers;
 using Markdig.Parsers;
 using Markdig.Renderers;
+using Markdig.Renderers.Html;
 using Markdig.Syntax.Inlines;
 
 namespace BlogGenerator.MarkdigExtension;
@@ -53,6 +54,10 @@ public class OEmbedCardExtension : IMarkdownExtension
 
     public void Setup(MarkdownPipeline pipeline, IMarkdownRenderer renderer)
     {
+        if (renderer is HtmlRenderer htmlRenderer && !htmlRenderer.ObjectRenderers.Contains<OEmbedInlineRenderer>())
+        {
+            htmlRenderer.ObjectRenderers.Insert(0, new OEmbedInlineRenderer());
+        }
     }
 
     private async ValueTask GetOEmbedProvidersJsonAsync()
@@ -200,7 +205,7 @@ public class OEmbedCardParser : InlineParser
         var htmlContent = _oEmbedResolver.GetOEmbedHtmlAsync(url).GetAwaiter().GetResult();
 
         // インラインとして処理
-        processor.Inline = new HtmlInline(htmlContent)
+        processor.Inline = new OEmbedInline(htmlContent)
         {
             Span =
                 {
