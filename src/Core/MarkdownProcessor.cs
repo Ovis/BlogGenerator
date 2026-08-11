@@ -25,6 +25,8 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
     public async Task InitializeAsync()
     {
+        await OEmbedCardExtension.InitializeAsync();
+
         if (!string.IsNullOrEmpty(oEmbedDir))
         {
             await OEmbedCacheStore.LoadAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
