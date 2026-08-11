@@ -79,6 +79,35 @@ public class OEmbedProviderCatalogLoaderTests
         Assert.That(catalog.FindMatchingProviderUrl("https://www.youtube.com/watch?v=abc123"), Is.EqualTo("https://www.youtube.com/"));
     }
 
+    [Test]
+    public void JSON由来のschemeでも正規表現メタ文字を厳密に扱える()
+    {
+        const string json = """
+            [
+              {
+                "provider_name": "Video Example",
+                "provider_url": "https://video.example.com/",
+                "endpoints": [
+                  {
+                    "url": "https://video.example.com/oembed",
+                    "schemes": [ "https://video.example.com/watch?video=*" ]
+                  }
+                ]
+              }
+            ]
+            """;
+
+        var loader = new OEmbedProviderCatalogLoader(new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))));
+
+        var catalog = loader.Parse(json);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(catalog.FindMatchingProviderUrl("https://video.example.com/watch?video=abc123"), Is.EqualTo("https://video.example.com/"));
+            Assert.That(catalog.FindMatchingProviderUrl("https://videoXexampleYcom/watchvideo=abc123"), Is.EqualTo(string.Empty));
+        });
+    }
+
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder = responder;

@@ -15,8 +15,8 @@ public class OEmbedProviderCatalog
             provider => provider.ProviderUrl,
             provider => provider.EndPoints
                 .SelectMany(endpoint => endpoint.Schemes)
-                .Select(scheme => scheme.Replace("*", @".*"))
-                .Append($"{provider.ProviderUrl}.*")
+                .Select(ConvertSchemeToRegexPattern)
+                .Append(ConvertSchemeToRegexPattern($"{provider.ProviderUrl}*"))
                 .ToList());
     }
 
@@ -41,7 +41,7 @@ public class OEmbedProviderCatalog
         {
             foreach (var endpoint in provider.EndPoints)
             {
-                var regexPatterns = endpoint.Schemes.Select(scheme => scheme.Replace("*", @".*"));
+                var regexPatterns = endpoint.Schemes.Select(ConvertSchemeToRegexPattern);
                 if (regexPatterns.Any(pattern => Regex.IsMatch(targetUrl, pattern)))
                 {
                     return endpoint.Url;
@@ -50,5 +50,11 @@ public class OEmbedProviderCatalog
         }
 
         return string.Empty;
+    }
+
+    private static string ConvertSchemeToRegexPattern(string scheme)
+    {
+        var escapedPattern = Regex.Escape(scheme).Replace(@"\*", ".*");
+        return $"^{escapedPattern}$";
     }
 }
