@@ -18,58 +18,47 @@ public class FileSystemHelper : IFileSystemHelper
         return extension == null ? combinedPath : Path.ChangeExtension(combinedPath, extension);
     }
 
-    public void CopyContentFile(string inputDir, string outputDir, string filePath)
+    public void CopyContentFiles(string inputDir, string outputDir)
     {
-        var relativePath = Path.GetRelativePath(inputDir, filePath);
-        var outputPath = Path.Combine(outputDir, relativePath);
-
-        // 出力フォルダパス
-        var outputDirPath = Path.GetDirectoryName(outputPath);
-        if (!Directory.Exists(outputDirPath))
+        foreach (var filePath in Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories))
         {
-            Directory.CreateDirectory(outputDirPath!);
-        }
-
-        var directoryInfo = new DirectoryInfo(Path.GetDirectoryName(filePath)!);
-        foreach (var dir in directoryInfo.GetDirectories("*", SearchOption.AllDirectories))
-        {
-            var targetDir = dir.FullName.Replace(inputDir, outputDir);
-            if (!Directory.Exists(targetDir))
+            if (Path.GetExtension(filePath) == ".md" || Path.GetFileName(filePath).StartsWith("."))
             {
-                Directory.CreateDirectory(targetDir);
+                continue;
             }
+
+            var relativePath = Path.GetRelativePath(inputDir, filePath);
+            var targetFilePath = Path.Combine(outputDir, relativePath);
+            EnsureDirectoryExists(Path.GetDirectoryName(targetFilePath)!);
+
+            CopyFileWithRetry(filePath, targetFilePath);
         }
+    }
 
-        foreach (var fileInfo in directoryInfo.GetFiles("*", SearchOption.AllDirectories))
+    private static void CopyFileWithRetry(string sourceFilePath, string targetFilePath)
+    {
+        const int maxRetries = 3;
+        const int delayMilliseconds = 3000;
+        var attempt = 0;
+        var success = false;
+
+        while (!success)
         {
-            if (fileInfo.FullName != filePath && Path.GetExtension(fileInfo.FullName) != ".md" && !Path.GetFileName(fileInfo.FullName).StartsWith("."))
+            try
             {
-                var targetFile = fileInfo.FullName.Replace(inputDir, outputDir);
-
-                const int maxRetries = 3;
-                const int delayMilliseconds = 3000;
-                var attempt = 0;
-                var success = false;
-
-                while (!success)
+                File.Copy(sourceFilePath, targetFilePath, true);
+                success = true;
+            }
+            catch (IOException ex) when (ex.Message.Contains("being used by another process"))
+            {
+                attempt++;
+                if (attempt < maxRetries)
                 {
-                    try
-                    {
-                        File.Copy(fileInfo.FullName, targetFile, true);
-                        success = true;
-                    }
-                    catch (IOException ex) when (ex.Message.Contains("being used by another process"))
-                    {
-                        attempt++;
-                        if (attempt < maxRetries)
-                        {
-                            Thread.Sleep(delayMilliseconds);
-                        }
-                        else
-                        {
-                            throw;
-                        }
-                    }
+                    Thread.Sleep(delayMilliseconds);
+                }
+                else
+                {
+                    throw;
                 }
             }
         }
