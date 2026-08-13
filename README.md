@@ -42,6 +42,48 @@ dotnet toolを使用して実行する場合：
 bloggen --input /path/to/input --output /path/to/output --theme /path/to/theme
 ```
 
+### 生成とプレビュー
+
+次の兄弟ディレクトリ構成になっている場合、同梱のPowerShellスクリプトでビルド、サイト生成、ローカルプレビューをまとめて実行できます。
+
+```text
+Blog/
+├─ BlogGenerator/
+├─ theme/
+├─ article/
+└─ output/
+```
+
+```powershell
+.\build-preview.ps1 `
+  -ThemeRoot ..\theme `
+  -ArticleRoot ..\article
+```
+
+生成に成功すると `output` に成果物を作成し、`http://127.0.0.1:8765/` でPythonのWebサーバーを起動します。終了するときは `Ctrl+C` を押します。
+
+`ThemeRoot`には`templates`ディレクトリと`blogconfig.json`を持つテーマルート、`ArticleRoot`にはMarkdown記事と静的ファイルを持つ入力ルートを指定します。相対パスと絶対パスのどちらも使用できます。
+
+ポートを変更する場合：
+
+```powershell
+.\build-preview.ps1 `
+  -ThemeRoot ..\theme `
+  -ArticleRoot ..\article `
+  -Port 8080
+```
+
+生成だけ行い、Webサーバーを起動しない場合：
+
+```powershell
+.\build-preview.ps1 `
+  -ThemeRoot ..\theme `
+  -ArticleRoot ..\article `
+  -NoServer
+```
+
+スクリプトは新しい成果物を別ディレクトリへ生成・検証してから `output` と差し替えます。既存の `output` は `output.previous-日時-ID` という名前で残るため、不要になったことを確認してから削除してください。また、記事リポジトリの `.git` などの管理用ディレクトリは一時入力から除外され、成果物にはコピーされません。
+
 必須オプション：
 
 - `-i, --input, /input` - Markdownファイルを含む入力フォルダーを指定します
