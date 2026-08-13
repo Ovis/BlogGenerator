@@ -74,10 +74,10 @@ public class OEmbedResolver
         var oEmbedEndpoint = OEmbedSiteMetaDataExtractor.GetOEmbedEndpoint(metaData);
         if (!string.IsNullOrEmpty(oEmbedEndpoint))
         {
-            var (isSuccess, embedHtml, _, _) = await _oEmbedEndpointResolver.GetEmbedResultAsync(oEmbedEndpoint, url);
+            var (isSuccess, embedHtml, discoveryIsVideo, _) = await _oEmbedEndpointResolver.GetEmbedResultAsync(oEmbedEndpoint, url);
             if (isSuccess && !string.IsNullOrEmpty(embedHtml))
             {
-                html = OEmbedHtmlFactory.WrapInParagraph(embedHtml);
+                html = OEmbedHtmlFactory.WrapInParagraph(embedHtml, discoveryIsVideo);
                 OEmbedCache[url] = html;
                 return html;
             }

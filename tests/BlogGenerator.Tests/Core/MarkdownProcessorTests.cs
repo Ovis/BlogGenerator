@@ -151,6 +151,31 @@ public class MarkdownProcessorTests
     }
 
     [Test]
+    public async Task ルート相対画像URLは記事ディレクトリ配下へ再解決しない()
+    {
+        OEmbedTestState.Prepare();
+
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        var articlePath = Path.Combine(inputDir, "posts", "root-relative-image.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(articlePath)!);
+        await File.WriteAllTextAsync(articlePath, "![sample](/img/sample.png)");
+
+        var processor = CreateProcessor();
+
+        var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.That(articles, Has.Count.EqualTo(1));
+
+        var article = articles[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(article.RelativeDirectoryPath, Is.EqualTo("posts"));
+            Assert.That(article.Body, Does.Contain("/img/sample.png"));
+            Assert.That(article.Body, Does.Not.Contain("/blog/posts/img/sample.png"));
+        });
+    }
+
+    [Test]
     public async Task oEmbedキャッシュ済みURLを本文へ展開できる()
     {
         const string targetUrl = "https://example.com/post";

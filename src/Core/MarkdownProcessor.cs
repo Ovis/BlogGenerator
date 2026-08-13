@@ -118,7 +118,8 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
     private static bool IsExternalUrl(string url)
     {
-        return url.StartsWith("//", StringComparison.Ordinal)
+        return url.StartsWith("/", StringComparison.Ordinal)
+            || url.StartsWith("//", StringComparison.Ordinal)
             || Uri.TryCreate(url, UriKind.Absolute, out _);
     }
 }
