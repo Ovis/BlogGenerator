@@ -2,6 +2,7 @@ using System.Net.Http;
 using BlogGenerator.MarkdigExtension;
 using Markdig;
 using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 using NUnit.Framework;
 
 namespace BlogGenerator.Tests.MarkdigExtension;
@@ -23,6 +24,23 @@ public class OEmbedCardParserTests
         {
             Assert.That(oEmbedInline.Url, Is.EqualTo("https://example.com/post"));
             Assert.That(oEmbedInline.HtmlContent, Is.EqualTo(string.Empty));
+        });
+    }
+
+    [Test]
+    public void 通常リンクの後続にあるoEmbedだけを解析できる()
+    {
+        var pipeline = new MarkdownPipelineBuilder()
+            .Use(new ParserOnlyOEmbedExtension(new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(new ThrowIfCalledHandler()))))
+            .UseAdvancedExtensions()
+            .Build();
+
+        var document = Markdown.Parse("""[link](https://example.com) [oembed:"https://example.com/post"]""", pipeline);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(document.Descendants<OEmbedInline>().Count(), Is.EqualTo(1));
+            Assert.That(document.Descendants<LinkInline>().Count(link => !link.IsImage), Is.EqualTo(1));
         });
     }
 

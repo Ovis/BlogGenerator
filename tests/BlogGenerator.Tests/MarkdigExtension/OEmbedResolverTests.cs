@@ -188,6 +188,46 @@ public class OEmbedResolverTests
         Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
     }
 
+    [Test]
+    public async Task discovery経由のvideoレスポンスは動画用クラス付きで返せる()
+    {
+        const string targetUrl = "https://example.com/video";
+        const string pageHtml = """
+            <html>
+              <head>
+                <link type="application/json+oembed" href="/oembed" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.ToString() == targetUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(pageHtml, Encoding.UTF8, "text/html")
+                };
+            }
+
+            Assert.That(
+                request.RequestUri!.ToString(),
+                Is.EqualTo("https://example.com/oembed?url=https%3A%2F%2Fexample.com%2Fvideo"));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"video","html":"<iframe></iframe>"}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
+    }
+
     private sealed class ThrowIfCalledHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

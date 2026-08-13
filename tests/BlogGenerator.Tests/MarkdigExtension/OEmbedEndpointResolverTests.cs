@@ -88,6 +88,46 @@ public class OEmbedEndpointResolverTests
         });
     }
 
+    [Test]
+    public async Task 相対リダイレクト先のoEmbedレスポンスを取得できる()
+    {
+        const string endpointUrl = "https://example.com/oembed";
+        const string redirectedUrl = "https://example.com/oembed.json";
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.ToString() == $"{endpointUrl}?url=https%3A%2F%2Fexample.com%2Fpost")
+            {
+                return new HttpResponseMessage(HttpStatusCode.MovedPermanently)
+                {
+                    Headers =
+                    {
+                        Location = new Uri("/oembed.json", UriKind.Relative)
+                    }
+                };
+            }
+
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo(redirectedUrl));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"rich","html":"<div>redirected</div>"}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var resolver = new OEmbedEndpointResolver(new HttpClient(handler));
+
+        var result = await resolver.GetEmbedResultAsync(endpointUrl, "https://example.com/post");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccess, Is.True);
+            Assert.That(result.RichLinkString, Is.EqualTo("<div>redirected</div>"));
+            Assert.That(result.IsVideo, Is.False);
+            Assert.That(result.Error, Is.Null);
+        });
+    }
+
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder = responder;

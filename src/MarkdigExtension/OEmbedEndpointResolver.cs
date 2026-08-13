@@ -95,6 +95,21 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
         return QueryHelpers.ParseQuery(query).Keys.Any(key => string.Equals(key, "url", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static string ResolveUrl(string baseUrl, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return string.Empty;
+        }
+
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        return new Uri(new Uri(baseUrl), candidate).ToString();
+    }
+
     /// <summary>
     /// Webサイトコンテンツを取得する
     /// </summary>
@@ -109,7 +124,7 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
                 var redirectUrl = response.Headers.Location?.OriginalString ?? string.Empty;
                 if (!string.IsNullOrEmpty(redirectUrl))
                 {
-                    response = await _httpClient.GetAsync(redirectUrl);
+                    response = await _httpClient.GetAsync(ResolveUrl(url, redirectUrl));
                 }
             }
 

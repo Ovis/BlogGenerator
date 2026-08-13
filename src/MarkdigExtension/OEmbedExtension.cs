@@ -80,7 +80,7 @@ public class OEmbedCardExtension : IMarkdownExtension
 /// </summary>
 public class OEmbedCardParser : InlineParser
 {
-    private static readonly Regex OEmbedTagRegex = new(@"\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
+    private static readonly Regex OEmbedTagRegex = new(@"^\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
 
     public OEmbedCardParser(OEmbedResolver oEmbedResolver)
     {
