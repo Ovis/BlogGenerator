@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/BlogGenerator.csproj" />
+  <Project Path="tests/BlogGenerator.Tests/BlogGenerator.Tests.csproj" />
+</Solution>

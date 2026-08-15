@@ -24,7 +24,7 @@ public record Article(
         }
     }
 
-    public string RootRelativePath => Path.Combine(RootRelativeDirectoryPath, FileName).Replace("\\", "/");
+    public string RootRelativePath => PageModelBase.CombineUrlPath(RootRelativeDirectoryPath, FileName);
 }
 
 public static class ArticleExtensions

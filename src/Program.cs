@@ -23,9 +23,17 @@ public class Program
         var commandLineSetup = new CommandLineSetup();
         var rootCommand = commandLineSetup.CreateRootCommand();
 
-        rootCommand.SetHandler(async (input, output, theme, oEmbedDir, configFile) =>
+        rootCommand.SetAction(async (parseResult, _) =>
         {
+            var input = parseResult.GetRequiredValue(commandLineSetup.InputOption);
+            var output = parseResult.GetRequiredValue(commandLineSetup.OutputOption);
+            var theme = parseResult.GetRequiredValue(commandLineSetup.ThemeOption);
+            var oEmbedDir = parseResult.GetValue(commandLineSetup.OEmbedOption);
+            var configFile = parseResult.GetValue(commandLineSetup.ConfigOption);
+
             Console.WriteLine($"[Start] Command Line Setup: {sw.Elapsed}");
+
+            ThrowIfOutputDirectoryIsInputSubdirectory(input.FullName, output.FullName);
 
             // 設定の読み込み（優先度順に適用）
             var configBuilder = new ConfigurationBuilder();
@@ -152,6 +160,11 @@ public class Program
 
             Console.WriteLine($"[Completed] Theme Files Copy: {sw.Elapsed}");
 
+            // 入力配下の静的ファイルをコピー
+            fileSystemHelper.CopyContentFiles(input.FullName, output.FullName);
+
+            Console.WriteLine($"[Completed] Content Files Copy: {sw.Elapsed}");
+
             // 記事の処理
             var articles = await markdownProcessor.ProcessMarkdownFilesAsync(
                 input.FullName,
@@ -181,20 +194,23 @@ public class Program
             // oEmbedキャッシュの保存
             if (!string.IsNullOrEmpty(oEmbedDir))
             {
-                await OEmbedCardExtension.SaveOEmbedCacheAsync(oEmbedDir);
+                await OEmbedCacheStore.SaveAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
             }
 
             Console.WriteLine($"[Completed] oEmbed Cache Save: {sw.Elapsed}");
 
             Console.WriteLine("Completed: " + sw.Elapsed);
-        },
-        commandLineSetup.InputOption,
-        commandLineSetup.OutputOption,
-        commandLineSetup.ThemeOption,
-        commandLineSetup.OEmbedOption,
-        commandLineSetup.ConfigOption);
+            return 0;
+        });
 
-        return await rootCommand.InvokeAsync(args);
+        var invocationConfiguration = new InvocationConfiguration
+        {
+            Output = Console.Out,
+            Error = Console.Error
+        };
+
+        return await rootCommand.Parse(args, new ParserConfiguration())
+            .InvokeAsync(invocationConfiguration);
     }
 
     private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir)
@@ -226,4 +242,20 @@ public class Program
 
         return services.BuildServiceProvider();
     }
+
+    private static void ThrowIfOutputDirectoryIsInputSubdirectory(string inputDir, string outputDir)
+    {
+        var normalizedInputDir = NormalizeDirectoryPath(inputDir);
+        var normalizedOutputDir = NormalizeDirectoryPath(outputDir);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+        if (string.Equals(normalizedInputDir, normalizedOutputDir, comparison) ||
+            normalizedOutputDir.StartsWith(normalizedInputDir + Path.DirectorySeparatorChar, comparison))
+        {
+            throw new ArgumentException("Output directory must not be the same as or a subdirectory of the input directory.");
+        }
+    }
+
+    private static string NormalizeDirectoryPath(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 }
