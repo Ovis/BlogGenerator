@@ -9,10 +9,14 @@ using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
-public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSystemHelper fileSystemHelper)
+public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
     : IMarkdownProcessor
 {
-    private readonly MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
+    private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder()
+        .UseYamlFrontMatter()
+        .Build();
+
+    private readonly MarkdownPipeline _contentPipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
         .Use<OEmbedCardExtension>()
@@ -21,35 +25,32 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSys
 
     public async Task InitializeAsync()
     {
+        await OEmbedCardExtension.InitializeAsync();
+
         if (!string.IsNullOrEmpty(oEmbedDir))
         {
-            await OEmbedCardExtension.LoadOEmbedCacheAsync(oEmbedDir);
+            await OEmbedCacheStore.LoadAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
         }
     }
 
     public async Task<List<Article>> ProcessMarkdownFilesAsync(string inputDir, string outputDir, string baseAbsolutePath)
     {
-        var articles = await Task.Run(() => Directory.GetFiles(inputDir, "*.md", SearchOption.AllDirectories)
-            .AsParallel()
-            .Select(filePath => ProcessMarkdownFile(inputDir, outputDir, filePath, baseAbsolutePath))
-            .OrderByDescending(x => x.Published)
-            .ToList());
-
-        return articles;
+        var filePaths = Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories)
+            .Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var articles = await Task.WhenAll(filePaths.Select(filePath => ProcessMarkdownFileAsync(inputDir, outputDir, filePath, baseAbsolutePath)));
+        return articles.OrderByDescending(x => x.Published).ToList();
     }
 
-    private Article ProcessMarkdownFile(string inputDir, string outputDir, string filePath, string baseAbsolutePath)
+    private async Task<Article> ProcessMarkdownFileAsync(string inputDir, string outputDir, string filePath, string baseAbsolutePath)
     {
         var relativePathExcludeFileName = Path.GetRelativePath(inputDir, Path.GetDirectoryName(filePath)!).Replace("\\", "/");
         relativePathExcludeFileName = relativePathExcludeFileName == "." ? string.Empty : relativePathExcludeFileName;
 
-        var routeRelativePath = Path.Combine(baseAbsolutePath, relativePathExcludeFileName);
+        var routeRelativePath = PageModelBase.CombineUrlPath(baseAbsolutePath, relativePathExcludeFileName);
 
         // Markdownファイルの内容を読み込む
-        var (html, frontMatter) = ParseMarkdownWithFrontmatter(filePath, routeRelativePath);
-
-        // コンテンツ系ファイルはMarkdownファイルを除いてそのままコピー
-        fileSystemHelper.CopyContentFile(inputDir, outputDir, filePath);
+        var (html, frontMatter) = await ParseMarkdownWithFrontmatterAsync(filePath, routeRelativePath);
 
         return new Article(
             FileName: Path.ChangeExtension(Path.GetFileNameWithoutExtension(filePath), ".html"),
@@ -63,15 +64,15 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSys
         );
     }
 
-    private (string html, Frontmatter frontMatter) ParseMarkdownWithFrontmatter(string path, string basePath)
+    private async Task<(string html, Frontmatter frontMatter)> ParseMarkdownWithFrontmatterAsync(string path, string basePath)
     {
         var markdown = File.ReadAllText(path);
 
         var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
-        _markdownPipeline.Setup(renderer);
+        _contentPipeline.Setup(renderer);
 
-        var document = Markdown.Parse(markdown, _markdownPipeline);
+        var document = Markdown.Parse(markdown, _frontMatterPipeline);
         var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
 
         var frontMatter = new Frontmatter();
@@ -89,17 +90,22 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSys
             markdownContent = markdown[(yamlEndIndex + 1)..].TrimStart();
         }
 
-        var markdownDocument = Markdown.Parse(markdownContent, _markdownPipeline);
+        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline);
 
         // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
         {
             if (link.IsImage)
             {
-                // SiteOptionのBaseUrlを使って、画像の相対パスを絶対パスに変換
-                link.Url = Path.Combine(basePath, link.Url!).Replace("\\", "/");
+                if (!IsExternalUrl(link.Url!))
+                {
+                    // SiteOptionのBaseUrlを使って、画像の相対パスを絶対パスに変換
+                    link.Url = PageModelBase.CombineUrlPath(basePath, link.Url!);
+                }
             }
         }
+
+        await OEmbedDocumentResolver.ResolveAsync(markdownDocument, OEmbedCardExtension.OEmbedResolver);
 
         writer.GetStringBuilder().Clear();
         renderer.Render(markdownDocument);
@@ -108,5 +114,12 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir, IFileSys
         var html = writer.ToString();
 
         return (html, frontMatter);
+    }
+
+    private static bool IsExternalUrl(string url)
+    {
+        return url.StartsWith("/", StringComparison.Ordinal)
+            || url.StartsWith("//", StringComparison.Ordinal)
+            || Uri.TryCreate(url, UriKind.Absolute, out _);
     }
 }
