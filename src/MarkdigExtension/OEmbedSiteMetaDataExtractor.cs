@@ -15,7 +15,7 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
     /// </summary>
     public async Task<(bool IsSuccess, SiteMetaData Data)> GetSiteMetaDataAsync(string url)
     {
-        var (isSuccess, contentHtml, _, _) = await GetWebsiteContentAsync(url);
+        var (isSuccess, contentHtml, _, effectiveUrl, _) = await GetWebsiteContentAsync(url);
         if (!isSuccess || string.IsNullOrEmpty(contentHtml))
         {
             return (false, new SiteMetaData());
@@ -23,7 +23,7 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
 
         try
         {
-            return (true, Parse(url, contentHtml));
+            return (true, Parse(effectiveUrl ?? url, contentHtml));
         }
         catch (Exception e)
         {
@@ -100,7 +100,7 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
     /// <summary>
     /// Webサイトコンテンツを取得する
     /// </summary>
-    private async Task<(bool IsSuccess, string? Content, string? MediaType, Exception? Error)> GetWebsiteContentAsync(string url)
+    private async Task<(bool IsSuccess, string? Content, string? MediaType, string? EffectiveUrl, Exception? Error)> GetWebsiteContentAsync(string url)
     {
         try
         {
@@ -111,7 +111,7 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
                 var redirectUrl = response.Headers.Location?.OriginalString ?? string.Empty;
                 if (!string.IsNullOrEmpty(redirectUrl))
                 {
-                    response = await _httpClient.GetAsync(redirectUrl);
+                    response = await _httpClient.GetAsync(ResolveUrl(url, redirectUrl));
                 }
             }
 
@@ -122,13 +122,13 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
                 var byteArray = await response.Content.ReadAsByteArrayAsync();
                 ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
-                return (true, content, mediaType, null);
+                return (true, content, mediaType, response.RequestMessage?.RequestUri?.ToString() ?? url, null);
             }
         }
         catch (TaskCanceledException e)
         {
             Console.WriteLine($"Request timeout: {url}");
-            return (false, null, null, e);
+            return (false, null, null, null, e);
         }
         catch (HttpRequestException ex)
         {
@@ -141,14 +141,14 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
                 Console.WriteLine($"HTTP request error: {ex.HttpRequestError}, URL: {url}");
             }
 
-            return (false, null, null, ex);
+            return (false, null, null, null, ex);
         }
         catch (Exception e)
         {
             Console.WriteLine($"Error fetching content: {e.Message}, URL: {url}");
-            return (false, null, null, e);
+            return (false, null, null, null, e);
         }
 
-        return (false, null, null, null);
+        return (false, null, null, null, null);
     }
 }

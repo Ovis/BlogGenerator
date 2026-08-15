@@ -70,10 +70,29 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
         if (string.IsNullOrEmpty(url))
             return endpoint;
 
+        if (HasUrlQueryParameter(endpoint))
+            return endpoint;
+
         return QueryHelpers.AddQueryString(endpoint, new Dictionary<string, string?>
         {
             { "url", url }
         });
+    }
+
+    private static bool HasUrlQueryParameter(string endpoint)
+    {
+        var query = Uri.TryCreate(endpoint, UriKind.Absolute, out var absoluteUri)
+            ? absoluteUri.Query
+            : endpoint.Contains('?', StringComparison.Ordinal)
+                ? endpoint[endpoint.IndexOf('?', StringComparison.Ordinal)..]
+                : string.Empty;
+
+        if (string.IsNullOrEmpty(query))
+        {
+            return false;
+        }
+
+        return QueryHelpers.ParseQuery(query).Keys.Any(key => string.Equals(key, "url", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

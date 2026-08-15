@@ -74,7 +74,7 @@ public class OEmbedResolver
         var oEmbedEndpoint = OEmbedSiteMetaDataExtractor.GetOEmbedEndpoint(metaData);
         if (!string.IsNullOrEmpty(oEmbedEndpoint))
         {
-            var (isSuccess, embedHtml, _, _) = await _oEmbedEndpointResolver.GetEmbedResultAsync(oEmbedEndpoint, string.Empty);
+            var (isSuccess, embedHtml, _, _) = await _oEmbedEndpointResolver.GetEmbedResultAsync(oEmbedEndpoint, url);
             if (isSuccess && !string.IsNullOrEmpty(embedHtml))
             {
                 html = OEmbedHtmlFactory.WrapInParagraph(embedHtml);
