@@ -47,7 +47,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         var relativePathExcludeFileName = Path.GetRelativePath(inputDir, Path.GetDirectoryName(filePath)!).Replace("\\", "/");
         relativePathExcludeFileName = relativePathExcludeFileName == "." ? string.Empty : relativePathExcludeFileName;
 
-        var routeRelativePath = Path.Combine(baseAbsolutePath, relativePathExcludeFileName);
+        var routeRelativePath = PageModelBase.CombineUrlPath(baseAbsolutePath, relativePathExcludeFileName);
 
         // Markdownファイルの内容を読み込む
         var (html, frontMatter) = await ParseMarkdownWithFrontmatterAsync(filePath, routeRelativePath);
@@ -97,8 +97,11 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         {
             if (link.IsImage)
             {
-                // SiteOptionのBaseUrlを使って、画像の相対パスを絶対パスに変換
-                link.Url = Path.Combine(basePath, link.Url!).Replace("\\", "/");
+                if (!IsExternalUrl(link.Url!))
+                {
+                    // SiteOptionのBaseUrlを使って、画像の相対パスを絶対パスに変換
+                    link.Url = PageModelBase.CombineUrlPath(basePath, link.Url!);
+                }
             }
         }
 
@@ -111,5 +114,11 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         var html = writer.ToString();
 
         return (html, frontMatter);
+    }
+
+    private static bool IsExternalUrl(string url)
+    {
+        return url.StartsWith("//", StringComparison.Ordinal)
+            || Uri.TryCreate(url, UriKind.Absolute, out _);
     }
 }

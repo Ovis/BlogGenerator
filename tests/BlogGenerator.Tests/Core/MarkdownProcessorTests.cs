@@ -126,6 +126,31 @@ public class MarkdownProcessorTests
     }
 
     [Test]
+    public async Task 外部画像URLは絶対パス化せずそのまま出力できる()
+    {
+        OEmbedTestState.Prepare();
+
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        var articlePath = Path.Combine(inputDir, "external-image.md");
+        await File.WriteAllTextAsync(articlePath, "![sample](https://cdn.example.com/sample.png)");
+
+        var processor = CreateProcessor();
+
+        var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.That(articles, Has.Count.EqualTo(1));
+
+        var article = articles[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(article.RelativeDirectoryPath, Is.EqualTo(string.Empty));
+            Assert.That(article.Body, Does.Contain("https://cdn.example.com/sample.png"));
+            Assert.That(article.Body, Does.Not.Contain("/blog/https://cdn.example.com/sample.png"));
+            Assert.That(article.Body, Does.Not.Contain("\\https://cdn.example.com/sample.png"));
+        });
+    }
+
+    [Test]
     public async Task oEmbedキャッシュ済みURLを本文へ展開できる()
     {
         const string targetUrl = "https://example.com/post";
