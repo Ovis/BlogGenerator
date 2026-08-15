@@ -1,4 +1,4 @@
-using BlogGenerator.Core;
+﻿using BlogGenerator.Core;
 using BlogGenerator.Models;
 using NUnit.Framework;
 using RazorLight;
@@ -324,7 +324,7 @@ public class PageGeneratorTests
 
         while (current != null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "BlogGenerator.sln")))
+            if (File.Exists(Path.Combine(current.FullName, "BlogGenerator.slnx")))
             {
                 return current.FullName;
             }
@@ -332,6 +332,6 @@ public class PageGeneratorTests
             current = current.Parent;
         }
 
-        throw new DirectoryNotFoundException("BlogGenerator.sln を基準にしたリポジトリルートを特定できません。");
+        throw new DirectoryNotFoundException("BlogGenerator.slnx を基準にしたリポジトリルートを特定できません。");
     }
 }
