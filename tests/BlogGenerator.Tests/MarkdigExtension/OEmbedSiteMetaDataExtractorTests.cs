@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using BlogGenerator.MarkdigExtension;
 using NUnit.Framework;
 
@@ -100,5 +102,62 @@ public class OEmbedSiteMetaDataExtractorTests
         var endpoint = OEmbedSiteMetaDataExtractor.GetOEmbedEndpoint(metaData);
 
         Assert.That(endpoint, Is.EqualTo("https://example.com/oembed.json"));
+    }
+
+    [Test]
+    public async Task リダイレクト後URLを基準に相対oEmbedリンクを絶対化する()
+    {
+        const string shortUrl = "https://short.example.com/post";
+        const string finalUrl = "https://media.example.com/posts/hello";
+        const string html = """
+            <html>
+              <head>
+                <link type="application/json+oembed" href="/oembed" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var extractor = new OEmbedSiteMetaDataExtractor(new HttpClient(new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.ToString() == shortUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.MovedPermanently)
+                {
+                    Headers =
+                    {
+                        Location = new Uri(finalUrl)
+                    }
+                };
+            }
+
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo(finalUrl));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(html, Encoding.UTF8, "text/html")
+            };
+        })));
+
+        var (isSuccess, metaData) = await extractor.GetSiteMetaDataAsync(shortUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(isSuccess, Is.True);
+            Assert.That(metaData.Url, Is.EqualTo(finalUrl));
+            Assert.That(metaData.OembedJson, Is.EqualTo("https://media.example.com/oembed"));
+        });
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder = responder;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = _responder(request);
+            response.RequestMessage = request;
+            return Task.FromResult(response);
+        }
     }
 }

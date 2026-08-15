@@ -147,6 +147,47 @@ public class OEmbedResolverTests
         Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
     }
 
+    [Test]
+    public async Task discoveryのbare_endpointには元URLを付与して取得できる()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string pageHtml = """
+            <html>
+              <head>
+                <title>Example title</title>
+                <link type="application/json+oembed" href="/oembed" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.ToString() == targetUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(pageHtml, Encoding.UTF8, "text/html")
+                };
+            }
+
+            Assert.That(
+                request.RequestUri!.ToString(),
+                Is.EqualTo("https://example.com/oembed?url=https%3A%2F%2Fexample.com%2Fpost"));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"rich","html":"<blockquote>embed</blockquote>"}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
+    }
+
     private sealed class ThrowIfCalledHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
