@@ -19,18 +19,20 @@ public class PageGenerator : IPageGenerator
         _fileSystemHelper = fileSystemHelper;
     }
 
-    public async Task<string> GenerateSideBarHtmlAsync(List<Article> articles)
+    public async Task<TrustedHtml> GenerateSideBarHtmlAsync(List<Article> articles)
     {
         var publishedArticles = GetPublishedArticles(articles).ToList();
 
-        return await _razorLightEngine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
+        var html = await _razorLightEngine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
         {
             SiteOption = _siteOption,
             Articles = publishedArticles
         });
+
+        return new TrustedHtml(html);
     }
 
-    public async Task GenerateArticlePagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
+    public async Task GenerateArticlePagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
         foreach (var article in GetPublishedArticles(articles))
         {
@@ -55,7 +57,7 @@ public class PageGenerator : IPageGenerator
         }
     }
 
-    public async Task GenerateIndexPagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
+    public async Task GenerateIndexPagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
         var publishedArticles = GetPublishedArticles(articles);
 
@@ -94,7 +96,7 @@ public class PageGenerator : IPageGenerator
         }
     }
 
-    public async Task GenerateTagPagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
+    public async Task GenerateTagPagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
         var publishedArticles = GetPublishedArticles(articles).ToArray();
 
@@ -163,7 +165,7 @@ public class PageGenerator : IPageGenerator
         }
     }
 
-    public async Task GenerateArchivePagesAsync(List<Article> articles, string outputDir, string sideBarHtml)
+    public async Task GenerateArchivePagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
         var publishedArticles = GetPublishedArticles(articles);
 
