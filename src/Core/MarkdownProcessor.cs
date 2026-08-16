@@ -14,28 +14,32 @@ public class MarkdownProcessor : IMarkdownProcessor
 {
     private readonly SiteOption _siteOption;
     private readonly string _oEmbedDir;
-    private readonly bool _usesDefaultOEmbedResolver;
     private readonly OEmbedCardParser _oEmbedParser;
     private readonly SemaphoreSlim _initializationSemaphore = new(1, 1);
+    private readonly SemaphoreSlim _oEmbedProviderSemaphore = new(1, 1);
     private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Build();
+    private readonly Func<Task<OEmbedProviderCatalog>> _oEmbedProviderCatalogLoader;
 
     private OEmbedResolver _oEmbedResolver;
     private MarkdownPipeline? _contentPipeline;
     private bool _isInitialized;
+    private bool _oEmbedProviderCatalogLoaded;
 
     public MarkdownProcessor(
         SiteOption siteOption,
         string oEmbedDir,
         OEmbedResolver? oEmbedResolver = null,
-        OEmbedCardParser? oEmbedParser = null)
+        OEmbedCardParser? oEmbedParser = null,
+        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null)
     {
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
-        _usesDefaultOEmbedResolver = oEmbedResolver is null;
         _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
         _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
+        _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? LoadDefaultProviderCatalogAsync;
+        _oEmbedProviderCatalogLoaded = oEmbedResolver is not null;
     }
 
     public ConcurrentDictionary<string, string> OEmbedCache => _oEmbedResolver.OEmbedCache;
@@ -119,7 +123,11 @@ public class MarkdownProcessor : IMarkdownProcessor
             }
         }
 
-        await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+        if (markdownDocument.Descendants<OEmbedInline>().Any())
+        {
+            await EnsureOEmbedProviderCatalogLoadedAsync();
+            await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+        }
 
         writer.GetStringBuilder().Clear();
         renderer.Render(markdownDocument);
@@ -152,13 +160,6 @@ public class MarkdownProcessor : IMarkdownProcessor
                 return;
             }
 
-            if (_usesDefaultOEmbedResolver)
-            {
-                var httpClient = CreateOEmbedHttpClient();
-                var providerCatalog = await new OEmbedProviderCatalogLoader(httpClient).LoadAsync();
-                _oEmbedResolver = new OEmbedResolver(providerCatalog, httpClient, _oEmbedResolver.OEmbedCache);
-            }
-
             if (!string.IsNullOrEmpty(_oEmbedDir))
             {
                 await OEmbedCacheStore.LoadAsync(_oEmbedDir, _oEmbedResolver.OEmbedCache);
@@ -185,6 +186,31 @@ public class MarkdownProcessor : IMarkdownProcessor
         return new OEmbedResolver(new OEmbedProviderCatalog([]), httpClient);
     }
 
+    private async Task EnsureOEmbedProviderCatalogLoadedAsync()
+    {
+        if (_oEmbedProviderCatalogLoaded)
+        {
+            return;
+        }
+
+        await _oEmbedProviderSemaphore.WaitAsync();
+        try
+        {
+            if (_oEmbedProviderCatalogLoaded)
+            {
+                return;
+            }
+
+            var providerCatalog = await _oEmbedProviderCatalogLoader();
+            _oEmbedResolver.SetProviderCatalog(providerCatalog);
+            _oEmbedProviderCatalogLoaded = true;
+        }
+        finally
+        {
+            _oEmbedProviderSemaphore.Release();
+        }
+    }
+
     private static HttpClient CreateOEmbedHttpClient()
     {
         var httpClient = new HttpClient
@@ -193,5 +219,11 @@ public class MarkdownProcessor : IMarkdownProcessor
         };
         httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator");
         return httpClient;
+    }
+
+    private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync()
+    {
+        var httpClient = CreateOEmbedHttpClient();
+        return await new OEmbedProviderCatalogLoader(httpClient).LoadAsync();
     }
 }
