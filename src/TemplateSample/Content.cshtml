@@ -49,7 +49,7 @@
     }
     <div class="card-content @(article.IsFixedPage ? string.Empty : "pt-0")">
         <div class="content">
-            @article.Body
+            @Raw(article.BodyHtml.Value)
         </div>
     </div>
 </article>

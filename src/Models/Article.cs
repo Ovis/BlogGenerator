@@ -12,8 +12,14 @@ public record Article(
     string RootRelativeDirectoryPath,
     bool IsFixedPage)
 {
+    // 本文HTMLは Markdown 変換済みなので、テンプレート側でだけ明示的に生出力する
+    public TrustedHtml BodyHtml => new(Body);
+
     public string ExcerptHtml => Body.SplitHtml().excerptHtml;
     public string RemainingHtml => Body.SplitHtml().remainingHtml;
+
+    // 抜粋HTMLも本文と同じく、通常文字列とは分けて扱う
+    public TrustedHtml ExcerptHtmlContent => new(ExcerptHtml);
 
     public string Description
     {

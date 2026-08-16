@@ -37,13 +37,13 @@ public class PageGeneratorTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(html, Does.Not.Contain("Draft article"));
-            Assert.That(html, Does.Contain("/blog/tags/csharp"));
-            Assert.That(html, Does.Contain("csharp (2)"));
-            Assert.That(html, Does.Not.Contain("draft (1)"));
-            Assert.That(html, Does.Contain("/blog/2026/08"));
-            Assert.That(html, Does.Not.Contain("/blog/1/01"));
-            Assert.That(html, Does.Not.Contain("1-01 (1)"));
+            Assert.That(html.Value, Does.Not.Contain("Draft article"));
+            Assert.That(html.Value, Does.Contain("/blog/tags/csharp"));
+            Assert.That(html.Value, Does.Contain("csharp (2)"));
+            Assert.That(html.Value, Does.Not.Contain("draft (1)"));
+            Assert.That(html.Value, Does.Contain("/blog/2026/08"));
+            Assert.That(html.Value, Does.Not.Contain("/blog/1/01"));
+            Assert.That(html.Value, Does.Not.Contain("1-01 (1)"));
         });
     }
 
@@ -54,7 +54,7 @@ public class PageGeneratorTests
         var outputDir = CreateOutputDirectory();
         var articles = CreateArticles();
 
-        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
         var tagIndexPath = Path.Combine(outputDir, "tags", "index.html");
         var csharpTagPath = Path.Combine(outputDir, "tags", "csharp", "index.html");
@@ -91,7 +91,7 @@ public class PageGeneratorTests
         var outputDir = CreateOutputDirectory();
         var articles = CreateArticles();
 
-        await pageGenerator.GenerateArchivePagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateArchivePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
         var augustArchivePath = Path.Combine(outputDir, "2026", "08", "index.html");
         var undefinedArchivePath = Path.Combine(outputDir, "0001", "01", "index.html");
@@ -139,7 +139,7 @@ public class PageGeneratorTests
                 IsFixedPage: true)
         };
 
-        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
         var normalArticleHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "article.html"));
         var fixedPageHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "about.html"));
@@ -167,7 +167,7 @@ public class PageGeneratorTests
         var outputDir = CreateOutputDirectory();
         var articles = CreateArticles();
 
-        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
         Assert.Multiple(() =>
         {
@@ -197,8 +197,8 @@ public class PageGeneratorTests
                 IsFixedPage: false)
         };
 
-        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, "<aside>stub</aside>");
-        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
+        await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
         var tagIndexHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "index.html"));
         var encodedTagPagePath = Path.Combine(outputDir, "tags", encodedTag, "index.html");
@@ -222,9 +222,9 @@ public class PageGeneratorTests
         var outputDir = CreateOutputDirectory();
         var articles = CreatePagedArticles();
 
-        await pageGenerator.GenerateIndexPagesAsync(articles, outputDir, "<aside>stub</aside>");
-        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, "<aside>stub</aside>");
-        await pageGenerator.GenerateArchivePagesAsync(articles, outputDir, "<aside>stub</aside>");
+        await pageGenerator.GenerateIndexPagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
+        await pageGenerator.GenerateTagPagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
+        await pageGenerator.GenerateArchivePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
         var indexPageHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "index.html"));
         var csharpTagHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "csharp", "index.html"));
@@ -241,10 +241,54 @@ public class PageGeneratorTests
         });
     }
 
-    private PageGenerator CreatePageGenerator()
+    [Test]
+    public async Task 通常文字列はエスケープし信頼済みHTMLだけを生出力する()
+    {
+        var siteOption = new SiteOption
+        {
+            SiteName = "Blog <Generator> & Test",
+            SiteDescription = "Description <b>unsafe</b>",
+            SiteUrl = "https://example.com/blog/",
+            SiteAuthor = "Test Author",
+            SiteAuthorDescription = "Author Description"
+        };
+        var pageGenerator = CreatePageGenerator(siteOption);
+        var outputDir = CreateOutputDirectory();
+        var articles = new List<Article>
+        {
+            new(
+                FileName: "encoded.html",
+                Title: "Title <unsafe> & text",
+                Body: "<p><strong>Trusted body</strong></p>",
+                Tags: ["csharp"],
+                Published: DateTimeOffset.Parse("2026-08-11T10:00:00+09:00"),
+                RelativeDirectoryPath: "posts",
+                RootRelativeDirectoryPath: "/blog/posts",
+                IsFixedPage: false)
+        };
+
+        await pageGenerator.GenerateArticlePagesAsync(
+            articles,
+            outputDir,
+            new TrustedHtml("<aside><strong>Trusted sidebar</strong></aside>"));
+
+        var html = await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "encoded.html"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(html, Does.Contain("Title &lt;unsafe&gt; &amp; text"));
+            Assert.That(html, Does.Contain("Blog &lt;Generator&gt; &amp; Test"));
+            Assert.That(html, Does.Contain("<strong>Trusted body</strong>"));
+            Assert.That(html, Does.Not.Contain("&lt;strong&gt;Trusted body&lt;/strong&gt;"));
+            Assert.That(html, Does.Contain("<aside><strong>Trusted sidebar</strong></aside>"));
+            Assert.That(html, Does.Not.Contain("&lt;aside&gt;&lt;strong&gt;Trusted sidebar&lt;/strong&gt;&lt;/aside&gt;"));
+        });
+    }
+
+    private PageGenerator CreatePageGenerator(SiteOption? siteOption = null)
     {
         var templatePath = Path.Combine(GetRepositoryRootPath(), "src", "TemplateSample");
-        var siteOption = new SiteOption
+        siteOption ??= new SiteOption
         {
             SiteName = "BlogGenerator Test",
             SiteDescription = "Test Description",
@@ -256,7 +300,6 @@ public class PageGeneratorTests
         var razorLightEngine = new RazorLightEngineBuilder()
             .UseFileSystemProject(templatePath)
             .UseMemoryCachingProvider()
-            .DisableEncoding()
             .Build();
 
         return new PageGenerator(razorLightEngine, siteOption, new FileSystemHelper());

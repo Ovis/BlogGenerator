@@ -221,7 +221,6 @@ public class Program
         services.AddSingleton<RazorLightEngine>(_ => new RazorLightEngineBuilder()
             .UseFileSystemProject(themePath)
             .UseMemoryCachingProvider()
-            .DisableEncoding()
             .Build());
 
         // サイトオプションの登録

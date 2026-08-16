@@ -6,7 +6,7 @@ namespace BlogGenerator.Models
     {
         public PageType PageType { get; set; }
 
-        public string SideBarHtml { get; set; } = string.Empty;
+        public TrustedHtml SideBarHtml { get; set; } = TrustedHtml.Empty;
 
         public IReadOnlyCollection<Article> Articles { get; set; } = Array.Empty<Article>();
 

@@ -47,7 +47,7 @@
             </header>
             <div class="card-content pt-0">
                 <div class="content">
-                    @(article.ExcerptHtml)
+                    @Raw(article.ExcerptHtmlContent.Value)
                 </div>
                 @if (!string.IsNullOrEmpty(article.RemainingHtml)){
                     <a class="button is-fullwidth is-link is-outlined" href="@(article.RootRelativePath)">
