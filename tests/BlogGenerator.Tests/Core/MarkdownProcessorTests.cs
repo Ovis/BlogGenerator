@@ -1,5 +1,4 @@
 using System.Net.Http;
-using System.Reflection;
 using BlogGenerator.Core;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
@@ -34,8 +33,6 @@ public class MarkdownProcessorTests
     [Test]
     public async Task FrontmatterありのMarkdownをArticleへ変換できる()
     {
-        OEmbedTestState.Prepare();
-
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "posts", "hello.md");
         Directory.CreateDirectory(Path.GetDirectoryName(articlePath)!);
@@ -77,8 +74,6 @@ public class MarkdownProcessorTests
     [Test]
     public async Task FrontmatterなしのMarkdownは既定値で変換できる()
     {
-        OEmbedTestState.Prepare();
-
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "plain.md");
         await File.WriteAllTextAsync(articlePath, "本文だけです");
@@ -104,8 +99,6 @@ public class MarkdownProcessorTests
     [Test]
     public async Task 大文字拡張子のMarkdownも記事として変換できる()
     {
-        OEmbedTestState.Prepare();
-
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "HELLO.MD");
         await File.WriteAllTextAsync(articlePath, "大文字拡張子です");
@@ -128,8 +121,6 @@ public class MarkdownProcessorTests
     [Test]
     public async Task 外部画像URLは絶対パス化せずそのまま出力できる()
     {
-        OEmbedTestState.Prepare();
-
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "external-image.md");
         await File.WriteAllTextAsync(articlePath, "![sample](https://cdn.example.com/sample.png)");
@@ -153,8 +144,6 @@ public class MarkdownProcessorTests
     [Test]
     public async Task ルート相対画像URLは記事ディレクトリ配下へ再解決しない()
     {
-        OEmbedTestState.Prepare();
-
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "posts", "root-relative-image.md");
         Directory.CreateDirectory(Path.GetDirectoryName(articlePath)!);
@@ -180,10 +169,6 @@ public class MarkdownProcessorTests
     {
         const string targetUrl = "https://example.com/post";
         const string expectedHtml = "<div class='oembed-card'>cached content</div>";
-        OEmbedTestState.Prepare(new Dictionary<string, string>
-        {
-            [targetUrl] = expectedHtml
-        });
 
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "oembed.md");
@@ -191,7 +176,10 @@ public class MarkdownProcessorTests
             [oembed:"{targetUrl}"]
             """);
 
-        var processor = CreateProcessor();
+        var processor = CreateProcessor(new Dictionary<string, string>
+        {
+            [targetUrl] = expectedHtml
+        });
 
         var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
 
@@ -203,7 +191,6 @@ public class MarkdownProcessorTests
     public async Task oEmbed記法を含む本文は1回だけ評価される()
     {
         var countingParser = new CountingOEmbedCardParser();
-        OEmbedTestState.Prepare(parser: countingParser);
 
         var (inputDir, outputDir) = CreateInputAndOutputDirectories();
         var articlePath = Path.Combine(inputDir, "post.md");
@@ -214,21 +201,37 @@ public class MarkdownProcessorTests
             [oembed:"https://example.com/post"]
             """);
 
-        var processor = CreateProcessor();
+        var processor = CreateProcessor(parser: countingParser);
 
         await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
 
         Assert.That(countingParser.MatchCallCount, Is.EqualTo(1));
     }
 
-    private MarkdownProcessor CreateProcessor()
+    private MarkdownProcessor CreateProcessor(
+        IDictionary<string, string>? cachedEntries = null,
+        OEmbedCardParser? parser = null)
     {
+        var resolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            new HttpClient(new ThrowIfCalledHandler()));
+
+        if (cachedEntries != null)
+        {
+            foreach (var cachedEntry in cachedEntries)
+            {
+                resolver.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
+            }
+        }
+
         return new MarkdownProcessor(
             new SiteOption
             {
                 SiteUrl = "https://example.com/blog/"
             },
-            string.Empty);
+            string.Empty,
+            resolver,
+            parser);
     }
 
     private (string inputDir, string outputDir) CreateInputAndOutputDirectories()
@@ -240,33 +243,8 @@ public class MarkdownProcessorTests
         return (inputDir, outputDir);
     }
 
-    private static class OEmbedTestState
-    {
-        public static void Prepare(
-            IDictionary<string, string>? cachedEntries = null,
-            OEmbedCardParser? parser = null)
-        {
-            parser ??= new OEmbedCardParser(new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient()));
-
-            typeof(OEmbedCardExtension)
-                .GetProperty(nameof(OEmbedCardExtension.OEmbedCardParser), BindingFlags.Static | BindingFlags.Public)!
-                .GetSetMethod(nonPublic: true)!
-                .Invoke(null, [parser]);
-
-            OEmbedCardExtension.OEmbedResolver.OEmbedCache.Clear();
-
-            if (cachedEntries != null)
-            {
-                foreach (var cachedEntry in cachedEntries)
-                {
-                    OEmbedCardExtension.OEmbedResolver.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
-                }
-            }
-        }
-    }
-
     private sealed class CountingOEmbedCardParser()
-        : OEmbedCardParser(new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient()))
+        : OEmbedCardParser()
     {
         public int MatchCallCount { get; private set; }
 
@@ -274,6 +252,14 @@ public class MarkdownProcessorTests
         {
             MatchCallCount++;
             return false;
+        }
+    }
+
+    private sealed class ThrowIfCalledHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            throw new AssertionException($"HTTP should not be called. URL: {request.RequestUri}");
         }
     }
 }
