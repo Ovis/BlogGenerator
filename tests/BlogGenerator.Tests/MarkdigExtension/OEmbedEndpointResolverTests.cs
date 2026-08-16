@@ -89,6 +89,66 @@ public class OEmbedEndpointResolverTests
     }
 
     [Test]
+    public async Task photoレスポンスの危険なURLは失敗扱いにする()
+    {
+        const string xml = """
+            <oembed>
+              <type>photo</type>
+              <url>javascript:alert(1)</url>
+              <width>640</width>
+              <height>480</height>
+            </oembed>
+            """;
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(xml, Encoding.UTF8, "text/xml")
+        });
+
+        var resolver = new OEmbedEndpointResolver(new HttpClient(handler));
+
+        var result = await resolver.GetEmbedResultAsync("https://example.com/oembed", "https://example.com/post");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.RichLinkString, Is.Null);
+            Assert.That(result.Error, Is.TypeOf<InvalidDataException>());
+            Assert.That(result.Error?.Message, Is.EqualTo("Invalid oEmbed image url"));
+        });
+    }
+
+    [Test]
+    public async Task photoレスポンスの不正な寸法は失敗扱いにする()
+    {
+        const string xml = """
+            <oembed>
+              <type>photo</type>
+              <url>https://example.com/image.png</url>
+              <width>640 onload=alert(1)</width>
+              <height>0</height>
+            </oembed>
+            """;
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(xml, Encoding.UTF8, "text/xml")
+        });
+
+        var resolver = new OEmbedEndpointResolver(new HttpClient(handler));
+
+        var result = await resolver.GetEmbedResultAsync("https://example.com/oembed", "https://example.com/post");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.RichLinkString, Is.Null);
+            Assert.That(result.Error, Is.TypeOf<InvalidDataException>());
+            Assert.That(result.Error?.Message, Is.EqualTo("Invalid oEmbed image dimensions"));
+        });
+    }
+
+    [Test]
     public async Task 相対リダイレクト先のoEmbedレスポンスを取得できる()
     {
         const string endpointUrl = "https://example.com/oembed";

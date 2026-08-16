@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mime;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Serialization;
@@ -45,7 +46,7 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
                     throw new InvalidDataException("Missing required oEmbed values for image type");
                 }
 
-                var imgHtml = $"<img src=\"{embedResponse.Url}\" width=\"{embedResponse.Width}\" height=\"{embedResponse.Height}\" />";
+                var imgHtml = BuildPhotoImageHtml(embedResponse.Url, embedResponse.Width, embedResponse.Height);
                 return (true, imgHtml, false, null);
             }
 
@@ -108,6 +109,41 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
         }
 
         return new Uri(new Uri(baseUrl), candidate).ToString();
+    }
+
+    // oEmbed photo は外部入力なので、画像URLと寸法を最低限検証してから属性へ出力する
+    private static string BuildPhotoImageHtml(string imageUrl, string width, string height)
+    {
+        if (!TryGetSafeHttpUrl(imageUrl, out var safeImageUrl))
+        {
+            throw new InvalidDataException("Invalid oEmbed image url");
+        }
+
+        if (!TryParsePositiveInt(width, out var safeWidth) || !TryParsePositiveInt(height, out var safeHeight))
+        {
+            throw new InvalidDataException("Invalid oEmbed image dimensions");
+        }
+
+        return $"<img src=\"{WebUtility.HtmlEncode(safeImageUrl)}\" width=\"{safeWidth}\" height=\"{safeHeight}\" />";
+    }
+
+    private static bool TryParsePositiveInt(string value, out int parsedValue)
+    {
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsedValue) &&
+            parsedValue > 0;
+    }
+
+    private static bool TryGetSafeHttpUrl(string? url, out string safeUrl)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            safeUrl = uri.AbsoluteUri;
+            return true;
+        }
+
+        safeUrl = string.Empty;
+        return false;
     }
 
     /// <summary>
