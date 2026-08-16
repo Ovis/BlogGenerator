@@ -91,6 +91,30 @@ public class OEmbedSiteMetaDataExtractorTests
     }
 
     [Test]
+    public void 相対OGPリンクは元ページ基準で絶対URL化する()
+    {
+        const string html = """
+            <html>
+              <head>
+                <meta property="og:image" content="/images/cover.png" />
+                <meta property="og:url" content="entries/hello" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var extractor = new OEmbedSiteMetaDataExtractor(new HttpClient());
+
+        var metaData = extractor.Parse("https://example.com/posts/hello", html);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(metaData.OgImage, Is.EqualTo("https://example.com/images/cover.png"));
+            Assert.That(metaData.OgUrl, Is.EqualTo("https://example.com/posts/entries/hello"));
+        });
+    }
+
+    [Test]
     public void oEmbedエンドポイントはjsonを優先して解決する()
     {
         var metaData = new BlogGenerator.MarkdigExtension.Models.SiteMetaData
@@ -113,6 +137,8 @@ public class OEmbedSiteMetaDataExtractorTests
             <html>
               <head>
                 <link type="application/json+oembed" href="/oembed" />
+                <meta property="og:image" content="images/cover.png" />
+                <meta property="og:url" content="/posts/hello" />
               </head>
               <body></body>
             </html>
@@ -146,6 +172,8 @@ public class OEmbedSiteMetaDataExtractorTests
             Assert.That(isSuccess, Is.True);
             Assert.That(metaData.Url, Is.EqualTo(finalUrl));
             Assert.That(metaData.OembedJson, Is.EqualTo("https://media.example.com/oembed"));
+            Assert.That(metaData.OgImage, Is.EqualTo("https://media.example.com/posts/images/cover.png"));
+            Assert.That(metaData.OgUrl, Is.EqualTo(finalUrl));
         });
     }
 
