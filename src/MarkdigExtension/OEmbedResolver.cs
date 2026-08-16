@@ -83,7 +83,7 @@ public class OEmbedResolver
             }
         }
 
-        if (!string.IsNullOrEmpty(metaData.OgTitle) && !string.IsNullOrEmpty(metaData.OgUrl))
+        if (!string.IsNullOrEmpty(metaData.OgTitle))
         {
             html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateOgpCard(url, metaData));
             OEmbedCache[url] = html;

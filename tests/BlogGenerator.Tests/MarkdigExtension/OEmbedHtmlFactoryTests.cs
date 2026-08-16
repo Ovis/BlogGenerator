@@ -60,7 +60,8 @@ public class OEmbedHtmlFactoryTests
         const string url = "https://example.com/post";
         var metaData = new SiteMetaData
         {
-            Title = "Example title",
+            Title = "Document title",
+            OgTitle = "OG title",
             OgDescription = "Example description",
             OgImage = "https://example.com/image.png",
             OgSiteName = "Example site"
@@ -71,7 +72,8 @@ public class OEmbedHtmlFactoryTests
         Assert.Multiple(() =>
         {
             Assert.That(html, Does.Contain("bcard-wrapper"));
-            Assert.That(html, Does.Contain("Example title"));
+            Assert.That(html, Does.Contain("OG title"));
+            Assert.That(html, Does.Not.Contain("Document title"));
             Assert.That(html, Does.Contain("Example description"));
             Assert.That(html, Does.Contain("https://example.com/image.png"));
             Assert.That(html, Does.Contain("https://b.hatena.ne.jp/entry/s/example.com/post"));

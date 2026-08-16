@@ -74,7 +74,7 @@ public class OEmbedResolverTests
         const string html = """
             <html>
               <head>
-                <title>Example title</title>
+                <title>Document title</title>
                 <meta property="og:title" content="OG title" />
                 <meta property="og:image" content="https://example.com/image.png" />
                 <meta property="og:description" content="Example description" />
@@ -102,9 +102,49 @@ public class OEmbedResolverTests
         Assert.Multiple(() =>
         {
             Assert.That(result, Does.StartWith("<p><div class=\"bcard-wrapper\">"));
-            Assert.That(result, Does.Contain("Example title"));
+            Assert.That(result, Does.Contain("OG title"));
+            Assert.That(result, Does.Not.Contain("Document title"));
             Assert.That(result, Does.Contain("Example description"));
             Assert.That(result, Does.Contain("Example site"));
+        });
+    }
+
+    [Test]
+    public async Task og_urlが無くてもog_titleがあればカードHTMLへフォールバックする()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string html = """
+            <html>
+              <head>
+                <title>Document title</title>
+                <meta property="og:title" content="OG title" />
+                <meta property="og:image" content="https://example.com/image.png" />
+                <meta property="og:description" content="Example description" />
+                <meta property="og:site_name" content="Example site" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo(targetUrl));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(html, Encoding.UTF8, "text/html")
+            };
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Does.StartWith("<p><div class=\"bcard-wrapper\">"));
+            Assert.That(result, Does.Contain("href=\"https://example.com/post\""));
+            Assert.That(result, Does.Contain("OG title"));
         });
     }
 

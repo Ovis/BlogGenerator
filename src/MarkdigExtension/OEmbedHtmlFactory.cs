@@ -55,6 +55,7 @@ public static class OEmbedHtmlFactory
             return CreateStandardLink(url);
         }
 
+        var displayTitle = string.IsNullOrWhiteSpace(metaData.OgTitle) ? metaData.Title : metaData.OgTitle;
         var safeOgUrl = TryGetSafeHttpUrl(metaData.OgUrl, out var ogUrl) ? ogUrl : safeUrl;
         var safeOgImage = TryGetSafeHttpUrl(metaData.OgImage, out var ogImage) ? ogImage : null;
         var noSchemeUrl = new Uri(safeUrl).Authority + new Uri(safeUrl).PathAndQuery;
@@ -73,7 +74,7 @@ public static class OEmbedHtmlFactory
             .Append("</span>")
             .Append("<span class=\"bcard-main withogimg\">")
             .Append("<div class=\"bcard-title\">")
-            .Append(CreateExternalLink(safeOgUrl, metaData.Title, "nofollow noopener noreferrer"))
+            .Append(CreateExternalLink(safeOgUrl, displayTitle, "nofollow noopener noreferrer"))
             .Append("</div>")
             .Append("<div class=\"bcard-description\">")
             .Append(EscapeText(metaData.OgDescription))
