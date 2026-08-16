@@ -1,4 +1,5 @@
-﻿using BlogGenerator.Core.Interfaces;
+using System.Collections.Concurrent;
+using BlogGenerator.Core.Interfaces;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
@@ -9,32 +10,45 @@ using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
-public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
-    : IMarkdownProcessor
+public class MarkdownProcessor : IMarkdownProcessor
 {
+    private readonly SiteOption _siteOption;
+    private readonly string _oEmbedDir;
+    private readonly bool _usesDefaultOEmbedResolver;
+    private readonly OEmbedCardParser _oEmbedParser;
+    private readonly SemaphoreSlim _initializationSemaphore = new(1, 1);
     private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Build();
 
-    private readonly MarkdownPipeline _contentPipeline = new MarkdownPipelineBuilder()
-        .UseYamlFrontMatter()
-        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
-        .Use<OEmbedCardExtension>()
-        .UseAdvancedExtensions()
-        .Build();
+    private OEmbedResolver _oEmbedResolver;
+    private MarkdownPipeline? _contentPipeline;
+    private bool _isInitialized;
+
+    public MarkdownProcessor(
+        SiteOption siteOption,
+        string oEmbedDir,
+        OEmbedResolver? oEmbedResolver = null,
+        OEmbedCardParser? oEmbedParser = null)
+    {
+        _siteOption = siteOption;
+        _oEmbedDir = oEmbedDir;
+        _usesDefaultOEmbedResolver = oEmbedResolver is null;
+        _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
+        _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
+    }
+
+    public ConcurrentDictionary<string, string> OEmbedCache => _oEmbedResolver.OEmbedCache;
 
     public async Task InitializeAsync()
     {
-        await OEmbedCardExtension.InitializeAsync();
-
-        if (!string.IsNullOrEmpty(oEmbedDir))
-        {
-            await OEmbedCacheStore.LoadAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
-        }
+        await EnsureInitializedAsync();
     }
 
     public async Task<List<Article>> ProcessMarkdownFilesAsync(string inputDir, string outputDir, string baseAbsolutePath)
     {
+        await EnsureInitializedAsync();
+
         var filePaths = Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories)
             .Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase))
             .ToArray();
@@ -70,7 +84,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
         var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
-        _contentPipeline.Setup(renderer);
+        _contentPipeline!.Setup(renderer);
 
         var document = Markdown.Parse(markdown, _frontMatterPipeline);
         var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
@@ -90,7 +104,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
             markdownContent = markdown[(yamlEndIndex + 1)..].TrimStart();
         }
 
-        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline);
+        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline!);
 
         // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
@@ -105,7 +119,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
             }
         }
 
-        await OEmbedDocumentResolver.ResolveAsync(markdownDocument, OEmbedCardExtension.OEmbedResolver);
+        await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
 
         writer.GetStringBuilder().Clear();
         renderer.Render(markdownDocument);
@@ -121,5 +135,63 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         return url.StartsWith("/", StringComparison.Ordinal)
             || url.StartsWith("//", StringComparison.Ordinal)
             || Uri.TryCreate(url, UriKind.Absolute, out _);
+    }
+
+    private async Task EnsureInitializedAsync()
+    {
+        if (_isInitialized)
+        {
+            return;
+        }
+
+        await _initializationSemaphore.WaitAsync();
+        try
+        {
+            if (_isInitialized)
+            {
+                return;
+            }
+
+            if (_usesDefaultOEmbedResolver)
+            {
+                var httpClient = CreateOEmbedHttpClient();
+                var providerCatalog = await new OEmbedProviderCatalogLoader(httpClient).LoadAsync();
+                _oEmbedResolver = new OEmbedResolver(providerCatalog, httpClient, _oEmbedResolver.OEmbedCache);
+            }
+
+            if (!string.IsNullOrEmpty(_oEmbedDir))
+            {
+                await OEmbedCacheStore.LoadAsync(_oEmbedDir, _oEmbedResolver.OEmbedCache);
+            }
+
+            _contentPipeline = new MarkdownPipelineBuilder()
+                .UseYamlFrontMatter()
+                .Use(new AmazonAssociateExtension(_siteOption.AmazonAssociateTag))
+                .Use(new OEmbedCardExtension(_oEmbedParser))
+                .UseAdvancedExtensions()
+                .Build();
+
+            _isInitialized = true;
+        }
+        finally
+        {
+            _initializationSemaphore.Release();
+        }
+    }
+
+    private static OEmbedResolver CreateDefaultResolver()
+    {
+        var httpClient = CreateOEmbedHttpClient();
+        return new OEmbedResolver(new OEmbedProviderCatalog([]), httpClient);
+    }
+
+    private static HttpClient CreateOEmbedHttpClient()
+    {
+        var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(15)
+        };
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator");
+        return httpClient;
     }
 }

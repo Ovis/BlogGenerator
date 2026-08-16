@@ -39,7 +39,7 @@ public class OEmbedDocumentResolverTests
         {
             if (!pipeline.InlineParsers.Contains<OEmbedCardParser>())
             {
-                pipeline.InlineParsers.Insert(0, new OEmbedCardParser(_oEmbedResolver));
+                pipeline.InlineParsers.Insert(0, new OEmbedCardParser());
             }
         }
 
