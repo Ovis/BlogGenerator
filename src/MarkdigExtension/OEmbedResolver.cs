@@ -6,7 +6,7 @@ namespace BlogGenerator.MarkdigExtension;
 
 public class OEmbedResolver
 {
-    private readonly OEmbedProviderCatalog _oEmbedProviderCatalog;
+    private OEmbedProviderCatalog _oEmbedProviderCatalog;
     private readonly OEmbedEndpointResolver _oEmbedEndpointResolver;
     private readonly OEmbedSiteMetaDataExtractor _oEmbedSiteMetaDataExtractor;
 
@@ -35,6 +35,11 @@ public class OEmbedResolver
     }
 
     public ConcurrentDictionary<string, string> OEmbedCache { get; }
+
+    public void SetProviderCatalog(OEmbedProviderCatalog oEmbedProviderCatalog)
+    {
+        _oEmbedProviderCatalog = oEmbedProviderCatalog;
+    }
 
     /// <summary>
     /// URLからoEmbed HTMLを解決する

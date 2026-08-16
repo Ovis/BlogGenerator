@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using BlogGenerator.Core;
 using BlogGenerator.MarkdigExtension;
@@ -206,6 +207,71 @@ public class MarkdownProcessorTests
         await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
 
         Assert.That(countingParser.MatchCallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task oEmbed記法が無い本文ではprovider一覧を読み込まない()
+    {
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        var articlePath = Path.Combine(inputDir, "plain.md");
+        await File.WriteAllTextAsync(articlePath, "provider load should not happen");
+
+        var loadCallCount = 0;
+        var processor = new MarkdownProcessor(
+            new SiteOption
+            {
+                SiteUrl = "https://example.com/blog/"
+            },
+            string.Empty,
+            oEmbedProviderCatalogLoader: () =>
+            {
+                loadCallCount++;
+                return Task.FromResult(new OEmbedProviderCatalog([]));
+            });
+
+        await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.That(loadCallCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task oEmbed記法がある本文でprovider一覧を1回だけ読み込む()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string expectedHtml = "<div class='oembed-card'>cached content</div>";
+
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        var articlePath = Path.Combine(inputDir, "oembed.md");
+        var oEmbedCachePath = Path.Combine(_testRootPath, "oembed-cache.json");
+        await File.WriteAllTextAsync(articlePath, $"""[oembed:"{targetUrl}"]""");
+        await OEmbedCacheStore.SaveAsync(
+            oEmbedCachePath,
+            new ConcurrentDictionary<string, string>(new[]
+            {
+                new KeyValuePair<string, string>(targetUrl, expectedHtml)
+            }));
+
+        var loadCallCount = 0;
+        var processor = new MarkdownProcessor(
+            new SiteOption
+            {
+                SiteUrl = "https://example.com/blog/"
+            },
+            oEmbedCachePath,
+            oEmbedProviderCatalogLoader: () =>
+            {
+                loadCallCount++;
+                return Task.FromResult(new OEmbedProviderCatalog([]));
+            });
+
+        var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loadCallCount, Is.EqualTo(1));
+            Assert.That(articles, Has.Count.EqualTo(1));
+            Assert.That(articles[0].Body, Does.Contain(expectedHtml));
+        });
     }
 
     private MarkdownProcessor CreateProcessor(
