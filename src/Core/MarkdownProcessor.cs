@@ -42,7 +42,7 @@ public class MarkdownProcessor : IMarkdownProcessor
         _oEmbedProviderCatalogLoaded = oEmbedResolver is not null;
     }
 
-    public ConcurrentDictionary<string, string> OEmbedCache => _oEmbedResolver.OEmbedCache;
+    public ConcurrentDictionary<string, OEmbedCacheEntry> OEmbedCache => _oEmbedResolver.OEmbedCache;
 
     public async Task InitializeAsync()
     {

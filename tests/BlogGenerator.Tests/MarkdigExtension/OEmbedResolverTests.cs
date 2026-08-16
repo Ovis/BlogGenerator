@@ -15,8 +15,8 @@ public class OEmbedResolverTests
     {
         const string url = "https://example.com/post";
         const string cachedHtml = "<p>cached</p>";
-        var cache = new ConcurrentDictionary<string, string>();
-        cache[url] = cachedHtml;
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[url] = OEmbedCacheEntry.CreateSuccess(cachedHtml, DateTimeOffset.UtcNow, TimeSpan.FromDays(180));
 
         var resolver = new OEmbedResolver(
             new OEmbedProviderCatalog([]),
@@ -328,6 +328,52 @@ public class OEmbedResolverTests
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
         Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><div>card</div></div>"));
+    }
+
+    [Test]
+    public async Task 期限切れ成功キャッシュは再取得失敗時にstale_if_errorで返せる()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string staleHtml = "<div class=\"oembed-container\"><iframe></iframe></div>";
+        var now = new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero);
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[targetUrl] = OEmbedCacheEntry.CreateSuccess(staleHtml, now.AddDays(-200), TimeSpan.FromDays(180));
+
+        var resolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound))),
+            cache,
+            () => now);
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(staleHtml));
+            Assert.That(resolver.OEmbedCache[targetUrl].Status, Is.EqualTo(OEmbedCacheEntryStatus.Success));
+            Assert.That(resolver.OEmbedCache[targetUrl].NextRetryAt, Is.EqualTo(now.AddHours(6)));
+            Assert.That(resolver.OEmbedCache[targetUrl].LastFailureAt, Is.EqualTo(now));
+        });
+    }
+
+    [Test]
+    public async Task 失敗キャッシュの再試行待ち中はHTTPアクセスせず返せる()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string cachedFallback = "<div class=\"oembed-container\"><a href=\"https://example.com/post\">https://example.com/post</a></div>";
+        var now = new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero);
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[targetUrl] = OEmbedCacheEntry.CreateFailure(cachedFallback, now.AddHours(-1), TimeSpan.FromHours(6), "failed");
+
+        var resolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            new HttpClient(new ThrowIfCalledHandler()),
+            cache,
+            () => now);
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo(cachedFallback));
     }
 
     private sealed class ThrowIfCalledHandler : HttpMessageHandler
