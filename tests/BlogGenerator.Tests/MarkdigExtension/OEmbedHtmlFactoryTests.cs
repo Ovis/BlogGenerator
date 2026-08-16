@@ -27,7 +27,21 @@ public class OEmbedHtmlFactoryTests
 
         var html = OEmbedHtmlFactory.CreateStandardLink(url);
 
-        Assert.That(html, Is.EqualTo("<a href=\"https://example.com/post\" target=\"_blank\">https://example.com/post</a>"));
+        Assert.That(html, Is.EqualTo("<a href=\"https://example.com/post\" rel=\"noopener noreferrer\" target=\"_blank\">https://example.com/post</a>"));
+    }
+
+    [Test]
+    public void 標準リンクは危険なschemeをhrefへ出力しない()
+    {
+        const string url = "javascript:alert(1)";
+
+        var html = OEmbedHtmlFactory.CreateStandardLink(url);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(html, Is.EqualTo("<span>javascript:alert(1)</span>"));
+            Assert.That(html, Does.Not.Contain("href="));
+        });
     }
 
     [Test]
@@ -60,7 +74,34 @@ public class OEmbedHtmlFactoryTests
             Assert.That(html, Does.Contain("Example title"));
             Assert.That(html, Does.Contain("Example description"));
             Assert.That(html, Does.Contain("https://example.com/image.png"));
-            Assert.That(html, Does.Contain("//b.hatena.ne.jp/entry/s/example.com/post"));
+            Assert.That(html, Does.Contain("https://b.hatena.ne.jp/entry/s/example.com/post"));
+            Assert.That(html, Does.Contain("rel=\"nofollow noopener noreferrer\""));
+        });
+    }
+
+    [Test]
+    public void ogpカードは外部由来文字列をエスケープする()
+    {
+        const string url = "https://example.com/post";
+        var metaData = new SiteMetaData
+        {
+            Title = "<script>alert(1)</script>",
+            OgDescription = "<b>description</b>",
+            OgImage = "javascript:alert(2)",
+            OgSiteName = "<unsafe site>",
+            OgUrl = "javascript:alert(3)"
+        };
+
+        var html = OEmbedHtmlFactory.CreateOgpCard(url, metaData);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(html, Does.Contain("&lt;script&gt;alert(1)&lt;/script&gt;"));
+            Assert.That(html, Does.Not.Contain("<script>alert(1)</script>"));
+            Assert.That(html, Does.Contain("&lt;b&gt;description&lt;/b&gt;"));
+            Assert.That(html, Does.Not.Contain("javascript:alert(2)"));
+            Assert.That(html, Does.Not.Contain("javascript:alert(3)"));
+            Assert.That(html, Does.Contain("&lt;unsafe site&gt;"));
         });
     }
 }
