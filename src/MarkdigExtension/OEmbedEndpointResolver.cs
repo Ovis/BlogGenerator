@@ -112,7 +112,9 @@ public class OEmbedEndpointResolver
             return string.Empty;
         }
 
-        if (Uri.TryCreate(candidate, UriKind.Absolute, out var absoluteUri))
+        // Linux では /path が file:///path と解釈されうるため、http/https の絶対URLだけをそのまま受け入れる
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var absoluteUri) &&
+            (absoluteUri.Scheme == Uri.UriSchemeHttp || absoluteUri.Scheme == Uri.UriSchemeHttps))
         {
             return absoluteUri.ToString();
         }
