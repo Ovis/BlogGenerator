@@ -246,9 +246,14 @@ public class MarkdownProcessorTests
         await File.WriteAllTextAsync(articlePath, $"""[oembed:"{targetUrl}"]""");
         await OEmbedCacheStore.SaveAsync(
             oEmbedCachePath,
-            new ConcurrentDictionary<string, string>(new[]
+            new ConcurrentDictionary<string, OEmbedCacheEntry>(new[]
             {
-                new KeyValuePair<string, string>(targetUrl, expectedHtml)
+                new KeyValuePair<string, OEmbedCacheEntry>(
+                    targetUrl,
+                    OEmbedCacheEntry.CreateSuccess(
+                        expectedHtml,
+                        new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero),
+                        TimeSpan.FromDays(180)))
             }));
 
         var loadCallCount = 0;
@@ -286,7 +291,10 @@ public class MarkdownProcessorTests
         {
             foreach (var cachedEntry in cachedEntries)
             {
-                resolver.OEmbedCache[cachedEntry.Key] = cachedEntry.Value;
+                resolver.OEmbedCache[cachedEntry.Key] = OEmbedCacheEntry.CreateSuccess(
+                    cachedEntry.Value,
+                    DateTimeOffset.UtcNow,
+                    TimeSpan.FromDays(180));
             }
         }
 

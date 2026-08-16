@@ -15,8 +15,8 @@ public class OEmbedDocumentResolverTests
     {
         const string targetUrl = "https://example.com/post";
         const string expectedHtml = "<p>cached</p>";
-        var cache = new ConcurrentDictionary<string, string>();
-        cache[targetUrl] = expectedHtml;
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[targetUrl] = OEmbedCacheEntry.CreateSuccess(expectedHtml, DateTimeOffset.UtcNow, TimeSpan.FromDays(180));
         var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(new ThrowIfCalledHandler()), cache);
 
         var pipeline = new MarkdownPipelineBuilder()
