@@ -228,6 +228,68 @@ public class OEmbedResolverTests
         Assert.That(result, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
     }
 
+    [Test]
+    public async Task gist文字列を含むだけのURLはgist埋め込み扱いしない()
+    {
+        const string targetUrl = "https://example.com/post?next=gist.github.com/ovis/123";
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo(targetUrl));
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Does.Contain("<a href=\"https://example.com/post?next=gist.github.com/ovis/123\""));
+            Assert.That(result, Does.Not.Contain("<script src="));
+        });
+    }
+
+    [Test]
+    public async Task wordpress文字列を含むだけのproviderUrlにはforパラメータを付与しない()
+    {
+        const string targetUrl = "https://example.com/post";
+        var providerCatalog = new OEmbedProviderCatalog(
+        [
+            new OEmbedProviderJson
+            {
+                ProviderUrl = "https://example.com/wordpress.com/",
+                EndPoints =
+                [
+                    new Endpoint
+                    {
+                        Url = "https://api.example.com/oembed",
+                        Schemes = ["https://example.com/post*"]
+                    }
+                ]
+            }
+        ]);
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.That(
+                request.RequestUri!.ToString(),
+                Is.EqualTo("https://api.example.com/oembed?url=https%3A%2F%2Fexample.com%2Fpost"));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"rich","html":"<div>card</div>"}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var resolver = new OEmbedResolver(providerCatalog, new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo("<p><div>card</div></p>"));
+    }
+
     private sealed class ThrowIfCalledHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

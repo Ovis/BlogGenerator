@@ -48,7 +48,7 @@ public class OEmbedResolver
 
         string html;
 
-        if (url.Contains("gist.github.com"))
+        if (IsGistUrl(url))
         {
             html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateGistEmbed(url));
             OEmbedCache[url] = html;
@@ -112,7 +112,7 @@ public class OEmbedResolver
             return (false, null, false);
         }
 
-        if (existProviderUrl.Contains("wordpress.com"))
+        if (IsWordPressProviderUrl(existProviderUrl))
         {
             endpointUrl = QueryHelpers.AddQueryString(endpointUrl, new Dictionary<string, string?>
             {
@@ -131,5 +131,21 @@ public class OEmbedResolver
         }
 
         return (true, richLinkString, isVideo);
+    }
+
+    // gist 判定は部分一致ではなくホスト一致に寄せ、誤検出を防ぐ
+    private static bool IsGistUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        string.Equals(uri.Host, "gist.github.com", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsWordPressProviderUrl(string providerUrl)
+    {
+        if (!Uri.TryCreate(providerUrl, UriKind.Absolute, out var providerUri))
+        {
+            return false;
+        }
+
+        return string.Equals(providerUri.Host, "wordpress.com", StringComparison.OrdinalIgnoreCase) ||
+            providerUri.Host.EndsWith(".wordpress.com", StringComparison.OrdinalIgnoreCase);
     }
 }
