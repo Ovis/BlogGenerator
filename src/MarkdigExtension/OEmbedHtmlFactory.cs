@@ -6,14 +6,16 @@ namespace BlogGenerator.MarkdigExtension;
 
 public static class OEmbedHtmlFactory
 {
-    public static string WrapInParagraph(string html, bool isVideo = false)
+    public static string WrapInContainer(string html, bool isVideo = false)
     {
+        var className = isVideo ? " class=\"oembed-container oembed-video\"" : " class=\"oembed-container\"";
+
         return new StringBuilder()
-            .Append("<p")
-            .Append(isVideo ? " class='oembed-video'" : string.Empty)
+            .Append("<div")
+            .Append(className)
             .Append(">")
             .Append(html)
-            .Append("</p>")
+            .Append("</div>")
             .ToString();
     }
 

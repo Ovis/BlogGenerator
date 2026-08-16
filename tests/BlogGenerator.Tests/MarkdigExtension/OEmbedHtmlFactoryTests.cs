@@ -8,15 +8,15 @@ namespace BlogGenerator.Tests.MarkdigExtension;
 public class OEmbedHtmlFactoryTests
 {
     [Test]
-    public void paragraphラッパーは動画だけclassを付ける()
+    public void containerラッパーは動画だけ追加classを付ける()
     {
-        var normal = OEmbedHtmlFactory.WrapInParagraph("<a>link</a>");
-        var video = OEmbedHtmlFactory.WrapInParagraph("<iframe></iframe>", isVideo: true);
+        var normal = OEmbedHtmlFactory.WrapInContainer("<a>link</a>");
+        var video = OEmbedHtmlFactory.WrapInContainer("<iframe></iframe>", isVideo: true);
 
         Assert.Multiple(() =>
         {
-            Assert.That(normal, Is.EqualTo("<p><a>link</a></p>"));
-            Assert.That(video, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
+            Assert.That(normal, Is.EqualTo("<div class=\"oembed-container\"><a>link</a></div>"));
+            Assert.That(video, Is.EqualTo("<div class=\"oembed-container oembed-video\"><iframe></iframe></div>"));
         });
     }
 
