@@ -1,29 +1,37 @@
-using System.Net;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using BlogGenerator.MarkdigExtension.Models;
-using Hnx8.ReadJEnc;
 
 namespace BlogGenerator.MarkdigExtension;
 
-public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
+public class OEmbedSiteMetaDataExtractor
 {
-    private readonly HttpClient _httpClient = httpClient;
+    private readonly OEmbedHttpFetcher _fetcher;
+
+    public OEmbedSiteMetaDataExtractor(HttpClient httpClient)
+        : this(new OEmbedHttpFetcher(httpClient))
+    {
+    }
+
+    public OEmbedSiteMetaDataExtractor(OEmbedHttpFetcher fetcher)
+    {
+        _fetcher = fetcher;
+    }
 
     /// <summary>
     /// URLからサイトメタデータを取得する
     /// </summary>
     public async Task<(bool IsSuccess, SiteMetaData Data)> GetSiteMetaDataAsync(string url)
     {
-        var (isSuccess, contentHtml, _, effectiveUrl, _) = await GetWebsiteContentAsync(url);
-        if (!isSuccess || string.IsNullOrEmpty(contentHtml))
+        var fetchResult = await _fetcher.FetchAsync(url);
+        if (!fetchResult.IsSuccess || string.IsNullOrEmpty(fetchResult.Content))
         {
             return (false, new SiteMetaData());
         }
 
         try
         {
-            return (true, Parse(effectiveUrl ?? url, contentHtml));
+            return (true, Parse(fetchResult.EffectiveUrl, fetchResult.Content));
         }
         catch (Exception e)
         {
@@ -97,58 +105,4 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
             : candidate;
     }
 
-    /// <summary>
-    /// Webサイトコンテンツを取得する
-    /// </summary>
-    private async Task<(bool IsSuccess, string? Content, string? MediaType, string? EffectiveUrl, Exception? Error)> GetWebsiteContentAsync(string url)
-    {
-        try
-        {
-            var response = await _httpClient.GetAsync(url);
-
-            if (response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.MovedPermanently)
-            {
-                var redirectUrl = response.Headers.Location?.OriginalString ?? string.Empty;
-                if (!string.IsNullOrEmpty(redirectUrl))
-                {
-                    response = await _httpClient.GetAsync(ResolveUrl(url, redirectUrl));
-                }
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            if (response.IsSuccessStatusCode)
-            {
-                var mediaType = response.Content.Headers.ContentType?.MediaType;
-                var byteArray = await response.Content.ReadAsByteArrayAsync();
-                ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
-                return (true, content, mediaType, response.RequestMessage?.RequestUri?.ToString() ?? url, null);
-            }
-        }
-        catch (TaskCanceledException e)
-        {
-            Console.WriteLine($"Request timeout: {url}");
-            return (false, null, null, null, e);
-        }
-        catch (HttpRequestException ex)
-        {
-            if (ex.HttpRequestError == HttpRequestError.Unknown)
-            {
-                Console.WriteLine($"HTTP error: {ex.StatusCode}, URL: {url}");
-            }
-            else
-            {
-                Console.WriteLine($"HTTP request error: {ex.HttpRequestError}, URL: {url}");
-            }
-
-            return (false, null, null, null, ex);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"Error fetching content: {e.Message}, URL: {url}");
-            return (false, null, null, null, e);
-        }
-
-        return (false, null, null, null, null);
-    }
 }

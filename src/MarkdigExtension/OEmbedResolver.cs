@@ -16,8 +16,19 @@ public class OEmbedResolver
         ConcurrentDictionary<string, string>? oEmbedCache = null)
         : this(
             oEmbedProviderCatalog,
-            new OEmbedEndpointResolver(httpClient),
-            new OEmbedSiteMetaDataExtractor(httpClient),
+            new OEmbedHttpFetcher(httpClient),
+            oEmbedCache)
+    {
+    }
+
+    public OEmbedResolver(
+        OEmbedProviderCatalog oEmbedProviderCatalog,
+        OEmbedHttpFetcher fetcher,
+        ConcurrentDictionary<string, string>? oEmbedCache = null)
+        : this(
+            oEmbedProviderCatalog,
+            new OEmbedEndpointResolver(fetcher),
+            new OEmbedSiteMetaDataExtractor(fetcher),
             oEmbedCache)
     {
     }
