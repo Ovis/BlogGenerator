@@ -1,19 +1,28 @@
-using System.Net;
 using System.Net.Mime;
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Serialization;
 using BlogGenerator.Converters;
 using BlogGenerator.MarkdigExtension.Models;
-using Hnx8.ReadJEnc;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace BlogGenerator.MarkdigExtension;
 
-public class OEmbedEndpointResolver(HttpClient httpClient)
+public class OEmbedEndpointResolver
 {
-    private readonly HttpClient _httpClient = httpClient;
+    private readonly OEmbedHttpFetcher _fetcher;
+
+    public OEmbedEndpointResolver(HttpClient httpClient)
+        : this(new OEmbedHttpFetcher(httpClient))
+    {
+    }
+
+    public OEmbedEndpointResolver(OEmbedHttpFetcher fetcher)
+    {
+        _fetcher = fetcher;
+    }
 
     /// <summary>
     /// oEmbedエンドポイントからEmbedレスポンスを取得する
@@ -24,13 +33,13 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
 
         try
         {
-            var (isSuccess, content, mediaType, error) = await GetWebsiteContentAsync(requestUrl);
-            if (!isSuccess || string.IsNullOrEmpty(content))
+            var fetchResult = await _fetcher.FetchAsync(requestUrl);
+            if (!fetchResult.IsSuccess || string.IsNullOrEmpty(fetchResult.Content))
             {
-                return (false, null, false, error);
+                return (false, null, false, fetchResult.Error);
             }
 
-            var embedResponse = DeserializeEmbedResponse(content, mediaType);
+            var embedResponse = DeserializeEmbedResponse(fetchResult.Content, fetchResult.MediaType);
 
             if (!string.IsNullOrEmpty(embedResponse.Html))
             {
@@ -144,68 +153,6 @@ public class OEmbedEndpointResolver(HttpClient httpClient)
 
         safeUrl = string.Empty;
         return false;
-    }
-
-    /// <summary>
-    /// Webサイトコンテンツを取得する
-    /// </summary>
-    private async Task<(bool IsSuccess, string? Content, string? MediaType, Exception? Error)> GetWebsiteContentAsync(string url)
-    {
-        try
-        {
-            var response = await _httpClient.GetAsync(url);
-
-            if (response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.MovedPermanently)
-            {
-                var redirectUrl = response.Headers.Location?.OriginalString ?? string.Empty;
-                if (!string.IsNullOrEmpty(redirectUrl))
-                {
-                    response = await _httpClient.GetAsync(ResolveUrl(url, redirectUrl));
-                }
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            if (response.IsSuccessStatusCode)
-            {
-                var mediaType = response.Content.Headers.ContentType?.MediaType;
-                var byteArray = await response.Content.ReadAsByteArrayAsync();
-                ReadJEnc.JP.GetEncoding(byteArray, byteArray.Length, out var content);
-                return (true, content, mediaType, null);
-            }
-        }
-        catch (TaskCanceledException e)
-        {
-            Console.WriteLine($"Request timeout: {url}");
-            return (false, null, null, e);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogHttpRequestError(ex, url);
-            return (false, null, null, ex);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"Error fetching content: {e.Message}, URL: {url}");
-            return (false, null, null, e);
-        }
-
-        return (false, null, null, null);
-    }
-
-    /// <summary>
-    /// HTTPリクエストエラーをログ出力する
-    /// </summary>
-    private static void LogHttpRequestError(HttpRequestException ex, string url)
-    {
-        if (ex.HttpRequestError == HttpRequestError.Unknown)
-        {
-            Console.WriteLine($"HTTP error: {ex.StatusCode}, URL: {url}");
-        }
-        else
-        {
-            Console.WriteLine($"HTTP request error: {ex.HttpRequestError}, URL: {url}");
-        }
     }
 
     /// <summary>

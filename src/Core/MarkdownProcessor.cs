@@ -224,6 +224,6 @@ public class MarkdownProcessor : IMarkdownProcessor
     private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync()
     {
         var httpClient = CreateOEmbedHttpClient();
-        return await new OEmbedProviderCatalogLoader(httpClient).LoadAsync();
+        return await new OEmbedProviderCatalogLoader(new OEmbedHttpFetcher(httpClient)).LoadAsync();
     }
 }
