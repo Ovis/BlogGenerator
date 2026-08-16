@@ -1,4 +1,5 @@
-﻿using BlogGenerator.Core.Interfaces;
+using System.Collections.Concurrent;
+using BlogGenerator.Core.Interfaces;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
@@ -9,32 +10,49 @@ using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
-public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
-    : IMarkdownProcessor
+public class MarkdownProcessor : IMarkdownProcessor
 {
+    private readonly SiteOption _siteOption;
+    private readonly string _oEmbedDir;
+    private readonly OEmbedCardParser _oEmbedParser;
+    private readonly SemaphoreSlim _initializationSemaphore = new(1, 1);
+    private readonly SemaphoreSlim _oEmbedProviderSemaphore = new(1, 1);
     private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder()
         .UseYamlFrontMatter()
         .Build();
+    private readonly Func<Task<OEmbedProviderCatalog>> _oEmbedProviderCatalogLoader;
 
-    private readonly MarkdownPipeline _contentPipeline = new MarkdownPipelineBuilder()
-        .UseYamlFrontMatter()
-        .Use(new AmazonAssociateExtension(siteOption.AmazonAssociateTag))
-        .Use<OEmbedCardExtension>()
-        .UseAdvancedExtensions()
-        .Build();
+    private OEmbedResolver _oEmbedResolver;
+    private MarkdownPipeline? _contentPipeline;
+    private bool _isInitialized;
+    private bool _oEmbedProviderCatalogLoaded;
+
+    public MarkdownProcessor(
+        SiteOption siteOption,
+        string oEmbedDir,
+        OEmbedResolver? oEmbedResolver = null,
+        OEmbedCardParser? oEmbedParser = null,
+        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null)
+    {
+        _siteOption = siteOption;
+        _oEmbedDir = oEmbedDir;
+        _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
+        _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
+        _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? LoadDefaultProviderCatalogAsync;
+        _oEmbedProviderCatalogLoaded = oEmbedResolver is not null;
+    }
+
+    public ConcurrentDictionary<string, OEmbedCacheEntry> OEmbedCache => _oEmbedResolver.OEmbedCache;
 
     public async Task InitializeAsync()
     {
-        await OEmbedCardExtension.InitializeAsync();
-
-        if (!string.IsNullOrEmpty(oEmbedDir))
-        {
-            await OEmbedCacheStore.LoadAsync(oEmbedDir, OEmbedCardExtension.OEmbedResolver.OEmbedCache);
-        }
+        await EnsureInitializedAsync();
     }
 
     public async Task<List<Article>> ProcessMarkdownFilesAsync(string inputDir, string outputDir, string baseAbsolutePath)
     {
+        await EnsureInitializedAsync();
+
         var filePaths = Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories)
             .Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase))
             .ToArray();
@@ -70,7 +88,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
 
         var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
-        _contentPipeline.Setup(renderer);
+        _contentPipeline!.Setup(renderer);
 
         var document = Markdown.Parse(markdown, _frontMatterPipeline);
         var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
@@ -90,7 +108,7 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
             markdownContent = markdown[(yamlEndIndex + 1)..].TrimStart();
         }
 
-        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline);
+        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline!);
 
         // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
@@ -105,7 +123,11 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
             }
         }
 
-        await OEmbedDocumentResolver.ResolveAsync(markdownDocument, OEmbedCardExtension.OEmbedResolver);
+        if (markdownDocument.Descendants<OEmbedInline>().Any())
+        {
+            await EnsureOEmbedProviderCatalogLoadedAsync();
+            await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+        }
 
         writer.GetStringBuilder().Clear();
         renderer.Render(markdownDocument);
@@ -121,5 +143,87 @@ public class MarkdownProcessor(SiteOption siteOption, string oEmbedDir)
         return url.StartsWith("/", StringComparison.Ordinal)
             || url.StartsWith("//", StringComparison.Ordinal)
             || Uri.TryCreate(url, UriKind.Absolute, out _);
+    }
+
+    private async Task EnsureInitializedAsync()
+    {
+        if (_isInitialized)
+        {
+            return;
+        }
+
+        await _initializationSemaphore.WaitAsync();
+        try
+        {
+            if (_isInitialized)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(_oEmbedDir))
+            {
+                await OEmbedCacheStore.LoadAsync(_oEmbedDir, _oEmbedResolver.OEmbedCache);
+            }
+
+            _contentPipeline = new MarkdownPipelineBuilder()
+                .UseYamlFrontMatter()
+                .Use(new AmazonAssociateExtension(_siteOption.AmazonAssociateTag))
+                .Use(new OEmbedCardExtension(_oEmbedParser))
+                .UseAdvancedExtensions()
+                .Build();
+
+            _isInitialized = true;
+        }
+        finally
+        {
+            _initializationSemaphore.Release();
+        }
+    }
+
+    private static OEmbedResolver CreateDefaultResolver()
+    {
+        var httpClient = CreateOEmbedHttpClient();
+        return new OEmbedResolver(new OEmbedProviderCatalog([]), httpClient);
+    }
+
+    private async Task EnsureOEmbedProviderCatalogLoadedAsync()
+    {
+        if (_oEmbedProviderCatalogLoaded)
+        {
+            return;
+        }
+
+        await _oEmbedProviderSemaphore.WaitAsync();
+        try
+        {
+            if (_oEmbedProviderCatalogLoaded)
+            {
+                return;
+            }
+
+            var providerCatalog = await _oEmbedProviderCatalogLoader();
+            _oEmbedResolver.SetProviderCatalog(providerCatalog);
+            _oEmbedProviderCatalogLoaded = true;
+        }
+        finally
+        {
+            _oEmbedProviderSemaphore.Release();
+        }
+    }
+
+    private static HttpClient CreateOEmbedHttpClient()
+    {
+        var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(15)
+        };
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator");
+        return httpClient;
+    }
+
+    private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync()
+    {
+        var httpClient = CreateOEmbedHttpClient();
+        return await new OEmbedProviderCatalogLoader(new OEmbedHttpFetcher(httpClient)).LoadAsync();
     }
 }

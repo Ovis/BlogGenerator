@@ -15,8 +15,8 @@ public class OEmbedResolverTests
     {
         const string url = "https://example.com/post";
         const string cachedHtml = "<p>cached</p>";
-        var cache = new ConcurrentDictionary<string, string>();
-        cache[url] = cachedHtml;
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[url] = OEmbedCacheEntry.CreateSuccess(cachedHtml, DateTimeOffset.UtcNow, TimeSpan.FromDays(180));
 
         var resolver = new OEmbedResolver(
             new OEmbedProviderCatalog([]),
@@ -64,7 +64,7 @@ public class OEmbedResolverTests
 
         var html = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(html, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
+        Assert.That(html, Is.EqualTo("<div class=\"oembed-container oembed-video\"><iframe></iframe></div>"));
     }
 
     [Test]
@@ -74,7 +74,7 @@ public class OEmbedResolverTests
         const string html = """
             <html>
               <head>
-                <title>Example title</title>
+                <title>Document title</title>
                 <meta property="og:title" content="OG title" />
                 <meta property="og:image" content="https://example.com/image.png" />
                 <meta property="og:description" content="Example description" />
@@ -101,10 +101,50 @@ public class OEmbedResolverTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result, Does.StartWith("<p><div class=\"bcard-wrapper\">"));
-            Assert.That(result, Does.Contain("Example title"));
+            Assert.That(result, Does.StartWith("<div class=\"oembed-container\"><div class=\"bcard-wrapper\">"));
+            Assert.That(result, Does.Contain("OG title"));
+            Assert.That(result, Does.Not.Contain("Document title"));
             Assert.That(result, Does.Contain("Example description"));
             Assert.That(result, Does.Contain("Example site"));
+        });
+    }
+
+    [Test]
+    public async Task og_urlが無くてもog_titleがあればカードHTMLへフォールバックする()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string html = """
+            <html>
+              <head>
+                <title>Document title</title>
+                <meta property="og:title" content="OG title" />
+                <meta property="og:image" content="https://example.com/image.png" />
+                <meta property="og:description" content="Example description" />
+                <meta property="og:site_name" content="Example site" />
+              </head>
+              <body></body>
+            </html>
+            """;
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo(targetUrl));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(html, Encoding.UTF8, "text/html")
+            };
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Does.StartWith("<div class=\"oembed-container\"><div class=\"bcard-wrapper\">"));
+            Assert.That(result, Does.Contain("href=\"https://example.com/post\""));
+            Assert.That(result, Does.Contain("OG title"));
         });
     }
 
@@ -144,7 +184,7 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><blockquote>embed</blockquote></div>"));
     }
 
     [Test]
@@ -185,7 +225,7 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><blockquote>embed</blockquote></div>"));
     }
 
     [Test]
@@ -225,7 +265,115 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container oembed-video\"><iframe></iframe></div>"));
+    }
+
+    [Test]
+    public async Task gist文字列を含むだけのURLはgist埋め込み扱いしない()
+    {
+        const string targetUrl = "https://example.com/post?next=gist.github.com/ovis/123";
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.That(request.RequestUri!.ToString(), Is.EqualTo(targetUrl));
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var resolver = new OEmbedResolver(new OEmbedProviderCatalog([]), new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Does.Contain("<a href=\"https://example.com/post?next=gist.github.com/ovis/123\""));
+            Assert.That(result, Does.Not.Contain("<script src="));
+        });
+    }
+
+    [Test]
+    public async Task wordpress文字列を含むだけのproviderUrlにはforパラメータを付与しない()
+    {
+        const string targetUrl = "https://example.com/post";
+        var providerCatalog = new OEmbedProviderCatalog(
+        [
+            new OEmbedProviderJson
+            {
+                ProviderUrl = "https://example.com/wordpress.com/",
+                EndPoints =
+                [
+                    new Endpoint
+                    {
+                        Url = "https://api.example.com/oembed",
+                        Schemes = ["https://example.com/post*"]
+                    }
+                ]
+            }
+        ]);
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.That(
+                request.RequestUri!.ToString(),
+                Is.EqualTo("https://api.example.com/oembed?url=https%3A%2F%2Fexample.com%2Fpost"));
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"rich","html":"<div>card</div>"}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var resolver = new OEmbedResolver(providerCatalog, new HttpClient(handler));
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><div>card</div></div>"));
+    }
+
+    [Test]
+    public async Task 期限切れ成功キャッシュは再取得失敗時にstale_if_errorで返せる()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string staleHtml = "<div class=\"oembed-container\"><iframe></iframe></div>";
+        var now = new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero);
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[targetUrl] = OEmbedCacheEntry.CreateSuccess(staleHtml, now.AddDays(-200), TimeSpan.FromDays(180));
+
+        var resolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound))),
+            cache,
+            () => now);
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(staleHtml));
+            Assert.That(resolver.OEmbedCache[targetUrl].Status, Is.EqualTo(OEmbedCacheEntryStatus.Success));
+            Assert.That(resolver.OEmbedCache[targetUrl].NextRetryAt, Is.EqualTo(now.AddHours(6)));
+            Assert.That(resolver.OEmbedCache[targetUrl].LastFailureAt, Is.EqualTo(now));
+        });
+    }
+
+    [Test]
+    public async Task 失敗キャッシュの再試行待ち中はHTTPアクセスせず返せる()
+    {
+        const string targetUrl = "https://example.com/post";
+        const string cachedFallback = "<div class=\"oembed-container\"><a href=\"https://example.com/post\">https://example.com/post</a></div>";
+        var now = new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero);
+        var cache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        cache[targetUrl] = OEmbedCacheEntry.CreateFailure(cachedFallback, now.AddHours(-1), TimeSpan.FromHours(6), "failed");
+
+        var resolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            new HttpClient(new ThrowIfCalledHandler()),
+            cache,
+            () => now);
+
+        var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
+
+        Assert.That(result, Is.EqualTo(cachedFallback));
     }
 
     private sealed class ThrowIfCalledHandler : HttpMessageHandler

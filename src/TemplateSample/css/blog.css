@@ -25,6 +25,11 @@ img {
 	height: auto;
 }
 
+.oembed-container {
+	display: block;
+	margin: 1rem 0;
+}
+
 .oembed-video {
   /* 1024px以上の幅の場合に適応 */
 	position: relative;

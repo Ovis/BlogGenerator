@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - 'v*.*.*'
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+          cache: true
+          cache-dependency-path: |
+            src/BlogGenerator.csproj
+            tests/BlogGenerator.Tests/BlogGenerator.Tests.csproj
+
+      - name: Restore
+        run: dotnet restore BlogGenerator.slnx /p:CodexSkipRelaxVersioner=true
+
+      - name: Build
+        run: dotnet build BlogGenerator.slnx -c Release --no-restore -m:1 -v:m /p:CodexSkipRelaxVersioner=true
+
+      - name: Test
+        run: dotnet test BlogGenerator.slnx -c Release --no-build -m:1 -v:m /p:CodexSkipRelaxVersioner=true
