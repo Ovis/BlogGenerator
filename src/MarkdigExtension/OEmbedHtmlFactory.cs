@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using BlogGenerator.MarkdigExtension.Models;
 
@@ -18,20 +19,30 @@ public static class OEmbedHtmlFactory
 
     public static string CreateStandardLink(string url)
     {
+        if (!TryGetSafeHttpUrl(url, out var safeUrl))
+        {
+            return $"<span>{EscapeText(url)}</span>";
+        }
+
         return new StringBuilder()
             .Append("<a href=\"")
-            .Append(url)
-            .Append("\" target=\"_blank\">")
-            .Append(url)
+            .Append(EscapeAttribute(safeUrl))
+            .Append("\" rel=\"noopener noreferrer\" target=\"_blank\">")
+            .Append(EscapeText(safeUrl))
             .Append("</a>")
             .ToString();
     }
 
     public static string CreateGistEmbed(string url)
     {
+        if (!TryGetSafeHttpUrl(url, out var safeUrl))
+        {
+            return CreateStandardLink(url);
+        }
+
         return new StringBuilder()
             .Append("<script src=\"")
-            .Append(url)
+            .Append(EscapeAttribute(safeUrl))
             .Append(".js\">")
             .Append("</script>")
             .ToString();
@@ -39,35 +50,111 @@ public static class OEmbedHtmlFactory
 
     public static string CreateOgpCard(string url, SiteMetaData metaData)
     {
-        var noSchemeUrl = url.Replace($"{new Uri(url).Scheme}://", string.Empty);
+        if (!TryGetSafeHttpUrl(url, out var safeUrl))
+        {
+            return CreateStandardLink(url);
+        }
+
+        var safeOgUrl = TryGetSafeHttpUrl(metaData.OgUrl, out var ogUrl) ? ogUrl : safeUrl;
+        var safeOgImage = TryGetSafeHttpUrl(metaData.OgImage, out var ogImage) ? ogImage : null;
+        var noSchemeUrl = new Uri(safeUrl).Authority + new Uri(safeUrl).PathAndQuery;
+        var faviconUrl = $"https://www.google.com/s2/favicons?domain={Uri.EscapeDataString(safeUrl)}";
 
         return new StringBuilder()
             .Append("<div class=\"bcard-wrapper\">")
             .Append("<span class=\"bcard-header withgfav\">")
-            .Append($"<div class=\"bcard-favicon\" style=\"background-image: url(https://www.google.com/s2/favicons?domain={url})\"></div>")
+            .Append($"<div class=\"bcard-favicon\" style=\"{BuildBackgroundImageStyle(faviconUrl)}\"></div>")
             .Append("<div class=\"bcard-site\">")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{metaData.OgSiteName}</a>")
+            .Append(CreateExternalLink(safeOgUrl, metaData.OgSiteName, "nofollow noopener noreferrer"))
             .Append("</div>")
             .Append("<div class=\"bcard-url\">")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{url}</a>")
+            .Append(CreateExternalLink(safeOgUrl, safeOgUrl, "nofollow noopener noreferrer"))
             .Append("</div>")
             .Append("</span>")
             .Append("<span class=\"bcard-main withogimg\">")
             .Append("<div class=\"bcard-title\">")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">{metaData.Title}</a>")
+            .Append(CreateExternalLink(safeOgUrl, metaData.Title, "nofollow noopener noreferrer"))
             .Append("</div>")
             .Append("<div class=\"bcard-description\">")
-            .Append(metaData.OgDescription)
+            .Append(EscapeText(metaData.OgDescription))
             .Append("</div>")
-            .Append($"<a href=\"{url}\" rel=\"nofollow\" target=\"_blank\">")
-            .Append($"<div class=\"bcard-img\" style=\"background-image: url({metaData.OgImage})\"></div>")
-            .Append("</a>")
+            .Append(CreateOgpImageLink(safeOgUrl, safeOgImage))
             .Append("</span>")
             .Append("<span>")
-            .Append($"<a href=\"//b.hatena.ne.jp/entry/s/{noSchemeUrl}\" ref=\"nofollow\" target=\"_blank\">")
-            .Append($"<img src=\"//b.st-hatena.com/entry/image/{url}\" alt=\"[はてなブックマークで表示]\"></a>")
+            .Append(CreateHatenaBookmarkLink(noSchemeUrl, safeUrl))
             .Append("</span>")
             .Append("</div>")
             .ToString();
+    }
+
+    private static string CreateExternalLink(string href, string text, string rel)
+    {
+        return new StringBuilder()
+            .Append("<a href=\"")
+            .Append(EscapeAttribute(href))
+            .Append("\" rel=\"")
+            .Append(EscapeAttribute(rel))
+            .Append("\" target=\"_blank\">")
+            .Append(EscapeText(text))
+            .Append("</a>")
+            .ToString();
+    }
+
+    private static string CreateOgpImageLink(string href, string? imageUrl)
+    {
+        var builder = new StringBuilder()
+            .Append("<a href=\"")
+            .Append(EscapeAttribute(href))
+            .Append("\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">")
+            .Append("<div class=\"bcard-img\"");
+
+        if (!string.IsNullOrEmpty(imageUrl))
+        {
+            builder.Append(" style=\"")
+                .Append(BuildBackgroundImageStyle(imageUrl))
+                .Append("\"");
+        }
+
+        builder.Append("></div>")
+            .Append("</a>");
+
+        return builder.ToString();
+    }
+
+    private static string CreateHatenaBookmarkLink(string noSchemeUrl, string url)
+    {
+        return new StringBuilder()
+            .Append("<a href=\"https://b.hatena.ne.jp/entry/s/")
+            .Append(EscapeAttribute(noSchemeUrl))
+            .Append("\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">")
+            .Append("<img src=\"https://b.st-hatena.com/entry/image/")
+            .Append(EscapeAttribute(url))
+            .Append("\" alt=\"")
+            .Append(EscapeAttribute("[はてなブックマークで表示]"))
+            .Append("\"></a>")
+            .ToString();
+    }
+
+    private static string BuildBackgroundImageStyle(string url)
+    {
+        return $"background-image: url('{EscapeAttribute(url)}')";
+    }
+
+    private static string EscapeText(string value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static string EscapeAttribute(string value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    // 外部由来のURLを属性へ入れるため、http/https だけに絞る
+    private static bool TryGetSafeHttpUrl(string? url, out string safeUrl)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            safeUrl = uri.AbsoluteUri;
+            return true;
+        }
+
+        safeUrl = string.Empty;
+        return false;
     }
 }
