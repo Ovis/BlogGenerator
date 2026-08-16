@@ -12,25 +12,15 @@ namespace BlogGenerator.MarkdigExtension;
 /// <summary>
 /// Markdigにoembedカード機能を提供する拡張
 /// </summary>
-public class OEmbedCardExtension : IMarkdownExtension
+public class OEmbedCardExtension(OEmbedCardParser? parser = null) : IMarkdownExtension
 {
-    private static readonly HttpClient HttpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(15) // 15秒でタイムアウト
-    };
-    private static readonly SemaphoreSlim InitializationSemaphore = new(1, 1);
-
-    private static OEmbedResolver _oEmbedResolver = new(new OEmbedProviderCatalog([]), HttpClient);
-    private static bool _isInitialized;
-
-    public static OEmbedCardParser OEmbedCardParser { get; private set; } = new(_oEmbedResolver);
-    public static OEmbedResolver OEmbedResolver => _oEmbedResolver;
+    private readonly OEmbedCardParser _parser = parser ?? new OEmbedCardParser();
 
     public void Setup(MarkdownPipelineBuilder pipeline)
     {
-        if (!pipeline.InlineParsers.Contains<OEmbedCardParser>())
+        if (!pipeline.InlineParsers.Contains(_parser))
         {
-            pipeline.InlineParsers.Insert(0, OEmbedCardParser);
+            pipeline.InlineParsers.Insert(0, _parser);
         }
     }
 
@@ -41,38 +31,6 @@ public class OEmbedCardExtension : IMarkdownExtension
             htmlRenderer.ObjectRenderers.Insert(0, new OEmbedInlineRenderer());
         }
     }
-
-    public static async Task InitializeAsync()
-    {
-        if (_isInitialized)
-            return;
-
-        await InitializationSemaphore.WaitAsync();
-        try
-        {
-            if (_isInitialized)
-                return;
-
-            if (!HttpClient.DefaultRequestHeaders.UserAgent.Any())
-            {
-                HttpClient.DefaultRequestHeaders.Add("User-Agent", "BlogGenerator");
-            }
-
-            var providerCatalog = await new OEmbedProviderCatalogLoader(HttpClient).LoadAsync();
-            _oEmbedResolver = new OEmbedResolver(providerCatalog, HttpClient);
-            OEmbedCardParser = new OEmbedCardParser(_oEmbedResolver);
-            _isInitialized = true;
-        }
-        finally
-        {
-            InitializationSemaphore.Release();
-        }
-    }
-
-    internal static void SetResolver(OEmbedResolver oEmbedResolver)
-    {
-        _oEmbedResolver = oEmbedResolver;
-    }
 }
 
 /// <summary>
@@ -82,9 +40,8 @@ public class OEmbedCardParser : InlineParser
 {
     private static readonly Regex OEmbedTagRegex = new(@"^\[oembed:""(?<url>https?:\/\/[^""]+)""\]");
 
-    public OEmbedCardParser(OEmbedResolver oEmbedResolver)
+    public OEmbedCardParser()
     {
-        OEmbedCardExtension.SetResolver(oEmbedResolver);
         OpeningCharacters = ['['];
     }
 

@@ -29,15 +29,41 @@ public class OEmbedCacheStoreTests
     public async Task キャッシュを保存して再読込できる()
     {
         var filePath = Path.Combine(_testRootPath, "oembed-cache.json");
-        var sourceCache = new ConcurrentDictionary<string, string>();
-        sourceCache["https://example.com/post"] = "<p>cached</p>";
+        var sourceCache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        sourceCache["https://example.com/post"] = OEmbedCacheEntry.CreateSuccess(
+            "<p>cached</p>",
+            new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero),
+            TimeSpan.FromDays(180));
 
         await OEmbedCacheStore.SaveAsync(filePath, sourceCache);
 
-        var loadedCache = new ConcurrentDictionary<string, string>();
+        var loadedCache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
         await OEmbedCacheStore.LoadAsync(filePath, loadedCache);
 
         Assert.That(loadedCache, Contains.Key("https://example.com/post"));
-        Assert.That(loadedCache["https://example.com/post"], Is.EqualTo("<p>cached</p>"));
+        Assert.Multiple(() =>
+        {
+            Assert.That(loadedCache["https://example.com/post"].HtmlContent, Is.EqualTo("<p>cached</p>"));
+            Assert.That(loadedCache["https://example.com/post"].Status, Is.EqualTo(OEmbedCacheEntryStatus.Success));
+        });
+    }
+
+    [Test]
+    public async Task 旧形式キャッシュは成功エントリとして読める()
+    {
+        var filePath = Path.Combine(_testRootPath, "oembed-cache-legacy.json");
+        await File.WriteAllTextAsync(filePath, """{"https://example.com/post":"<p>cached</p>"}""");
+
+        var loadedCache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        var now = new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero);
+        await OEmbedCacheStore.LoadAsync(filePath, loadedCache, () => now);
+
+        Assert.That(loadedCache, Contains.Key("https://example.com/post"));
+        Assert.Multiple(() =>
+        {
+            Assert.That(loadedCache["https://example.com/post"].HtmlContent, Is.EqualTo("<p>cached</p>"));
+            Assert.That(loadedCache["https://example.com/post"].Status, Is.EqualTo(OEmbedCacheEntryStatus.Success));
+            Assert.That(loadedCache["https://example.com/post"].FreshUntil, Is.EqualTo(now.AddDays(180)));
+        });
     }
 }
