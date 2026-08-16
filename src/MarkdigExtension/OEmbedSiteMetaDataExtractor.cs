@@ -44,10 +44,10 @@ public class OEmbedSiteMetaDataExtractor(HttpClient httpClient)
             Url = url,
             Title = document.QuerySelector("title")?.TextContent ?? string.Empty,
             OgTitle = document.QuerySelector("meta[property='og:title']")?.GetAttribute("content") ?? string.Empty,
-            OgImage = document.QuerySelector("meta[property='og:image']")?.GetAttribute("content") ?? string.Empty,
+            OgImage = ResolveUrl(url, document.QuerySelector("meta[property='og:image']")?.GetAttribute("content")),
             OgDescription = document.QuerySelector("meta[property='og:description']")?.GetAttribute("content") ?? string.Empty,
             OgType = document.QuerySelector("meta[property='og:type']")?.GetAttribute("content") ?? string.Empty,
-            OgUrl = document.QuerySelector("meta[property='og:url']")?.GetAttribute("content") ?? string.Empty,
+            OgUrl = ResolveUrl(url, document.QuerySelector("meta[property='og:url']")?.GetAttribute("content")),
             OgSiteName = document.QuerySelector("meta[property='og:site_name']")?.GetAttribute("content") ?? string.Empty,
             OembedJson = ResolveUrl(url, document.QuerySelector("link[type='application/json+oembed']")?.GetAttribute("href")),
             OembedXml = ResolveUrl(url, GetXmlOembedLink(document))
