@@ -55,7 +55,7 @@ public class OEmbedResolver
 
         if (IsGistUrl(url))
         {
-            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateGistEmbed(url));
+            html = OEmbedHtmlFactory.WrapInContainer(OEmbedHtmlFactory.CreateGistEmbed(url));
             OEmbedCache[url] = html;
             return html;
         }
@@ -63,7 +63,7 @@ public class OEmbedResolver
         var (isProviderSupported, richLinkHtml, isVideo) = await GetRichLinkByOEmbedProviderAsync(url);
         if (isProviderSupported)
         {
-            html = OEmbedHtmlFactory.WrapInParagraph(richLinkHtml ?? string.Empty, isVideo);
+            html = OEmbedHtmlFactory.WrapInContainer(richLinkHtml ?? string.Empty, isVideo);
             OEmbedCache[url] = html;
             return html;
         }
@@ -71,7 +71,7 @@ public class OEmbedResolver
         var (isMetaDataSuccess, metaData) = await _oEmbedSiteMetaDataExtractor.GetSiteMetaDataAsync(url);
         if (!isMetaDataSuccess)
         {
-            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
+            html = OEmbedHtmlFactory.WrapInContainer(OEmbedHtmlFactory.CreateStandardLink(url));
             OEmbedCache[url] = html;
             return html;
         }
@@ -82,7 +82,7 @@ public class OEmbedResolver
             var (isSuccess, embedHtml, discoveryIsVideo, _) = await _oEmbedEndpointResolver.GetEmbedResultAsync(oEmbedEndpoint, url);
             if (isSuccess && !string.IsNullOrEmpty(embedHtml))
             {
-                html = OEmbedHtmlFactory.WrapInParagraph(embedHtml, discoveryIsVideo);
+                html = OEmbedHtmlFactory.WrapInContainer(embedHtml, discoveryIsVideo);
                 OEmbedCache[url] = html;
                 return html;
             }
@@ -90,12 +90,12 @@ public class OEmbedResolver
 
         if (!string.IsNullOrEmpty(metaData.OgTitle))
         {
-            html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateOgpCard(url, metaData));
+            html = OEmbedHtmlFactory.WrapInContainer(OEmbedHtmlFactory.CreateOgpCard(url, metaData));
             OEmbedCache[url] = html;
             return html;
         }
 
-        html = OEmbedHtmlFactory.WrapInParagraph(OEmbedHtmlFactory.CreateStandardLink(url));
+        html = OEmbedHtmlFactory.WrapInContainer(OEmbedHtmlFactory.CreateStandardLink(url));
         OEmbedCache[url] = html;
         return html;
     }

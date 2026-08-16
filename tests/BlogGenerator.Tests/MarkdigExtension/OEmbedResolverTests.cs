@@ -64,7 +64,7 @@ public class OEmbedResolverTests
 
         var html = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(html, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
+        Assert.That(html, Is.EqualTo("<div class=\"oembed-container oembed-video\"><iframe></iframe></div>"));
     }
 
     [Test]
@@ -101,7 +101,7 @@ public class OEmbedResolverTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result, Does.StartWith("<p><div class=\"bcard-wrapper\">"));
+            Assert.That(result, Does.StartWith("<div class=\"oembed-container\"><div class=\"bcard-wrapper\">"));
             Assert.That(result, Does.Contain("OG title"));
             Assert.That(result, Does.Not.Contain("Document title"));
             Assert.That(result, Does.Contain("Example description"));
@@ -142,7 +142,7 @@ public class OEmbedResolverTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result, Does.StartWith("<p><div class=\"bcard-wrapper\">"));
+            Assert.That(result, Does.StartWith("<div class=\"oembed-container\"><div class=\"bcard-wrapper\">"));
             Assert.That(result, Does.Contain("href=\"https://example.com/post\""));
             Assert.That(result, Does.Contain("OG title"));
         });
@@ -184,7 +184,7 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><blockquote>embed</blockquote></div>"));
     }
 
     [Test]
@@ -225,7 +225,7 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p><blockquote>embed</blockquote></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><blockquote>embed</blockquote></div>"));
     }
 
     [Test]
@@ -265,7 +265,7 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p class='oembed-video'><iframe></iframe></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container oembed-video\"><iframe></iframe></div>"));
     }
 
     [Test]
@@ -327,7 +327,7 @@ public class OEmbedResolverTests
 
         var result = await resolver.GetOEmbedHtmlAsync(targetUrl);
 
-        Assert.That(result, Is.EqualTo("<p><div>card</div></p>"));
+        Assert.That(result, Is.EqualTo("<div class=\"oembed-container\"><div>card</div></div>"));
     }
 
     private sealed class ThrowIfCalledHandler : HttpMessageHandler
