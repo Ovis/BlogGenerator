@@ -4,32 +4,37 @@ using Markdig;
 using Markdig.Helpers;
 using Markdig.Parsers;
 using Markdig.Renderers;
+using Markdig.Renderers.Html;
 using Markdig.Syntax.Inlines;
 
 namespace BlogGenerator.MarkdigExtension;
 
 public class AmazonAssociateExtension(string affiliateId) : IMarkdownExtension
 {
+    private readonly AmazonAssociateParser _parser = new();
+    private readonly AmazonInlineRenderer _renderer = new(affiliateId);
+
     public void Setup(MarkdownPipelineBuilder pipeline)
     {
-        if (!pipeline.InlineParsers.Contains<AmazonAssociateParser>())
+        if (!pipeline.InlineParsers.Contains(_parser))
         {
-            pipeline.InlineParsers.Insert(0, new AmazonAssociateParser(affiliateId));
+            pipeline.InlineParsers.Insert(0, _parser);
         }
     }
 
     public void Setup(MarkdownPipeline pipeline, IMarkdownRenderer renderer)
     {
+        if (renderer is HtmlRenderer htmlRenderer && !htmlRenderer.ObjectRenderers.Contains<AmazonInlineRenderer>())
+        {
+            htmlRenderer.ObjectRenderers.Insert(0, _renderer);
+        }
     }
 }
 
 public partial class AmazonAssociateParser : InlineParser
 {
-    private readonly string _associateId;
-
-    public AmazonAssociateParser(string associateId)
+    public AmazonAssociateParser()
     {
-        _associateId = associateId;
         OpeningCharacters = ['['];
     }
 
@@ -41,38 +46,62 @@ public partial class AmazonAssociateParser : InlineParser
             return false;
         }
 
-        var regex = AmazonAffiliateTagRegex();
-        var match = regex.Match(slice.ToString());
-
-        if (!match.Success)
+        var match = AmazonShortcodeRegex().Match(slice.ToString());
+        if (!match.Success || !TryCreateInline(match, out var amazonInline))
         {
             return false;
         }
 
-        var itemCode = match.Groups["itemCode"].Value;
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"<iframe style=\"width: 120px; height: 240px;\" marginwidth=\"0\" marginheight=\"0\" scrolling=\"no\" frameborder=\"0\"")
-            .AppendLine($"src=\"")
-            .AppendLine($"https://rcm-fe.amazon-adsystem.com/e/cm?ref=qf_sp_asin_til&t={_associateId}&m=amazon&o=9&p=8&l=as1&IS2=1&detail=1&asins={itemCode}&bc1=000000&amp;lt1=_blank&fc1=333333&lc1=0066c0&bg1=ffffff&f=ifr")
-            .AppendLine("\">")
-            .AppendLine("</iframe>");
-
-        processor.Inline = new HtmlInline(sb.ToString())
-        {
-            Span =
-            {
-                Start = processor.GetSourcePosition(slice.Start, out var line, out var column)
-            },
-            Line = line,
-            Column = column,
-            IsClosed = true
-        };
+        // パース段階では外部アクセスやHTML生成を行わず、後続の解決・描画処理へ必要な値だけを渡す
+        processor.Inline = amazonInline;
+        processor.Inline.Span.Start = processor.GetSourcePosition(slice.Start, out var line, out var column);
+        processor.Inline.Line = line;
+        processor.Inline.Column = column;
+        processor.Inline.IsClosed = true;
         processor.Inline.Span.End = processor.Inline.Span.Start + match.Length - 1;
         slice.Start += match.Length;
         return true;
     }
 
-    [GeneratedRegex(@"\[amazon:(?<itemCode>\w+)]")]
-    private static partial Regex AmazonAffiliateTagRegex();
+    private static bool TryCreateInline(Match match, out AmazonInline amazonInline)
+    {
+        string? manualTitle = null;
+        string? manualImageId = null;
+        var seenAttributes = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var index = 0; index < match.Groups["name"].Captures.Count; index++)
+        {
+            var name = match.Groups["name"].Captures[index].Value;
+            var value = match.Groups["value"].Captures[index].Value;
+
+            // 属性の見落としや上書きを防ぐため、明示的に許可した属性だけを一度ずつ受理する
+            if (!seenAttributes.Add(name))
+            {
+                amazonInline = null!;
+                return false;
+            }
+
+            switch (name)
+            {
+                case "title":
+                    manualTitle = value;
+                    break;
+                case "image":
+                    manualImageId = value;
+                    break;
+                default:
+                    amazonInline = null!;
+                    return false;
+            }
+        }
+
+        amazonInline = new AmazonInline(
+            match.Groups["asin"].Value.ToUpperInvariant(),
+            manualTitle,
+            manualImageId);
+        return true;
+    }
+
+    [GeneratedRegex(@"^\[amazon:(?<asin>[A-Za-z0-9]{10})(?:,(?<name>[a-z]+)=""(?<value>[^""]*)"")*\]")]
+    private static partial Regex AmazonShortcodeRegex();
 }
