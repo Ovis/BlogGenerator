@@ -38,7 +38,7 @@ public class AmazonCardTemplateRendererTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(html, Does.Contain("class=\"amazon-card\""));
+            Assert.That(html, Does.StartWith("<span class=\"amazon-card\""));
             Assert.That(html, Does.Contain("&amp;"));
             Assert.That(html, Does.Not.Contain("商品 & 名"));
             Assert.That(html, Does.Contain("class=\"amazon-card-image\""));
