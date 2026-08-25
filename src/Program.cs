@@ -29,6 +29,7 @@ public class Program
             var output = parseResult.GetRequiredValue(commandLineSetup.OutputOption);
             var theme = parseResult.GetRequiredValue(commandLineSetup.ThemeOption);
             var oEmbedDir = parseResult.GetValue(commandLineSetup.OEmbedOption);
+            var amazonCachePath = parseResult.GetValue(commandLineSetup.AmazonCacheOption);
             var configFile = parseResult.GetValue(commandLineSetup.ConfigOption);
 
             Console.WriteLine($"[Start] Command Line Setup: {sw.Elapsed}");
@@ -135,7 +136,7 @@ public class Program
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             // DIコンテナの設定
-            var serviceProvider = ConfigureServices(siteOption, feedOption, theme.FullName, oEmbedDir);
+            var serviceProvider = ConfigureServices(siteOption, feedOption, theme.FullName, oEmbedDir, amazonCachePath);
 
             Console.WriteLine($"[Completed] Dependency Injection Setup: {sw.Elapsed}");
 
@@ -197,6 +198,11 @@ public class Program
                 await OEmbedCacheStore.SaveAsync(oEmbedDir, markdownProcessor.OEmbedCache);
             }
 
+            if (!string.IsNullOrEmpty(amazonCachePath))
+            {
+                await AmazonProductMetadataCacheStore.SaveAsync(amazonCachePath, markdownProcessor.AmazonProductMetadataCache);
+            }
+
             Console.WriteLine($"[Completed] oEmbed Cache Save: {sw.Elapsed}");
 
             Console.WriteLine("Completed: " + sw.Elapsed);
@@ -213,7 +219,7 @@ public class Program
             .InvokeAsync(invocationConfiguration);
     }
 
-    private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir)
+    private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir, string? amazonCachePath)
     {
         var services = new ServiceCollection();
 
@@ -226,6 +232,9 @@ public class Program
         services.AddSingleton<IAmazonCardTemplateRenderer>(serviceProvider => new AmazonCardTemplateRenderer(
             serviceProvider.GetRequiredService<RazorLightEngine>(),
             themePath));
+        services.AddSingleton(_ => new AmazonProductMetadataResolver(
+            new AmazonProductHttpFetcher(new HttpClient { Timeout = TimeSpan.FromSeconds(15) }),
+            new AmazonProductPageParser()));
 
         // サイトオプションの登録
         services.AddSingleton(siteOption);
@@ -235,6 +244,7 @@ public class Program
 
         // oEmbedDirの登録
         services.AddSingleton(_ => oEmbedDir ?? string.Empty);
+        services.AddSingleton(new AmazonProductMetadataCacheSettings(amazonCachePath ?? string.Empty));
 
         // 各サービスの登録
         services.AddSingleton<IFileSystemHelper, FileSystemHelper>();

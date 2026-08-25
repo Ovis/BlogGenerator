@@ -13,13 +13,14 @@ public class CommandLineSetupTests
         var outputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "output");
         var themePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "theme");
         var oEmbedPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "oembed.json");
+        var amazonCachePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "amazon.json");
         var configPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "config.json");
 
         var setup = new CommandLineSetup();
         var rootCommand = setup.CreateRootCommand();
 
         var parseResult = rootCommand.Parse(
-            ["/input", inputPath, "--output", outputPath, "/theme", themePath, "/oembed", oEmbedPath, "-c", configPath],
+            ["/input", inputPath, "--output", outputPath, "/theme", themePath, "/oembed", oEmbedPath, "--amazon-cache", amazonCachePath, "-c", configPath],
             new ParserConfiguration());
 
         Assert.Multiple(() =>
@@ -29,6 +30,7 @@ public class CommandLineSetupTests
             Assert.That(parseResult.GetRequiredValue(setup.OutputOption).FullName, Is.EqualTo(Path.GetFullPath(outputPath)));
             Assert.That(parseResult.GetRequiredValue(setup.ThemeOption).FullName, Is.EqualTo(Path.GetFullPath(themePath)));
             Assert.That(parseResult.GetValue(setup.OEmbedOption), Is.EqualTo(oEmbedPath));
+            Assert.That(parseResult.GetValue(setup.AmazonCacheOption), Is.EqualTo(amazonCachePath));
             Assert.That(parseResult.GetValue(setup.ConfigOption)?.FullName, Is.EqualTo(Path.GetFullPath(configPath)));
         });
     }

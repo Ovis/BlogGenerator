@@ -35,6 +35,11 @@ public class CommandLineSetup
         Description = "oEmbedキャッシュファイル"
     };
 
+    public Option<string> AmazonCacheOption { get; } = new("--amazon-cache")
+    {
+        Description = "Amazon商品メタデータキャッシュファイル"
+    };
+
     // 設定ファイル指定オプション
     public Option<FileInfo> ConfigOption { get; } = new(
             "--config",
@@ -52,6 +57,7 @@ public class CommandLineSetup
         rootCommand.Add(OutputOption);
         rootCommand.Add(ThemeOption);
         rootCommand.Add(OEmbedOption);
+        rootCommand.Add(AmazonCacheOption);
 
         // 設定ファイルオプション
         rootCommand.Add(ConfigOption);

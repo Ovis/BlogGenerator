@@ -11,7 +11,8 @@ public static partial class AmazonDocumentResolver
     public static async Task ResolveAsync(
         MarkdownDocument markdownDocument,
         IAmazonCardTemplateRenderer templateRenderer,
-        string affiliateId)
+        string affiliateId,
+        AmazonProductMetadataResolver? metadataResolver = null)
     {
         if (string.IsNullOrWhiteSpace(affiliateId))
         {
@@ -21,17 +22,19 @@ public static partial class AmazonDocumentResolver
 
         foreach (var amazonInline in markdownDocument.Descendants<AmazonInline>())
         {
-            if (string.IsNullOrWhiteSpace(amazonInline.ManualTitle))
-            {
-                // 自動取得は後続段階で追加するため、現段階では手動titleを持つ入力だけをカード化する
-                continue;
-            }
+            var manualImageUrl = CreateImageUrl(amazonInline.ManualImageId);
+            var fetchedMetadata = metadataResolver is not null &&
+                (string.IsNullOrWhiteSpace(amazonInline.ManualTitle) || manualImageUrl is null)
+                ? await metadataResolver.ResolveAsync(amazonInline.Asin)
+                : null;
+            var title = amazonInline.ManualTitle ?? fetchedMetadata?.Title;
+            if (string.IsNullOrWhiteSpace(title)) continue;
 
             var model = new AmazonCardModel(
                 amazonInline.Asin,
                 CreateAffiliateProductUrl(amazonInline.Asin, affiliateId),
-                amazonInline.ManualTitle,
-                CreateImageUrl(amazonInline.ManualImageId));
+                title,
+                manualImageUrl ?? fetchedMetadata?.ImageUrl);
             amazonInline.HtmlContent = await templateRenderer.RenderAsync(model);
         }
     }
