@@ -91,4 +91,12 @@ public class AmazonProductPageParserTests
             Assert.That(metadata.ImageUrl, Is.Null);
         });
     }
+
+    [Test]
+    public void Amazonの汎用ページタイトルは商品名として採用しない()
+    {
+        var metadata = _parser.Parse("<html><head><title>Amazon.co.jp</title></head><body></body></html>");
+
+        Assert.That(metadata.Title, Is.Null);
+    }
 }

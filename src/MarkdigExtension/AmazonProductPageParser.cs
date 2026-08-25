@@ -107,7 +107,10 @@ public sealed class AmazonProductPageParser
         }
 
         var normalized = string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return normalized.Length == 0 ? null : normalized;
+        // 商品詳細を返さない画面のページタイトルでカードを作ると、記事上に無意味なAmazonカードが残る
+        return normalized.Length == 0 || string.Equals(normalized, "Amazon.co.jp", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : normalized;
     }
 
     private static string? NormalizeProductImageUrl(string? value)
