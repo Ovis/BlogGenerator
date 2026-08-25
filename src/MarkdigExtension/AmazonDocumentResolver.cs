@@ -28,7 +28,12 @@ public static partial class AmazonDocumentResolver
                 ? await metadataResolver.ResolveAsync(amazonInline.Asin)
                 : null;
             var title = amazonInline.ManualTitle ?? fetchedMetadata?.Title;
-            if (string.IsNullOrWhiteSpace(title)) continue;
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                // 商品名が得られない場合は、Amazon専用の壊れたカードを出さず既存のoEmbed経路へ戻す
+                amazonInline.OEmbedFallbackUrl = CreateCanonicalProductUrl(amazonInline.Asin);
+                continue;
+            }
 
             var model = new AmazonCardModel(
                 amazonInline.Asin,
@@ -40,7 +45,10 @@ public static partial class AmazonDocumentResolver
     }
 
     private static string CreateAffiliateProductUrl(string asin, string affiliateId) =>
-        $"https://www.amazon.co.jp/dp/{asin}/?tag={Uri.EscapeDataString(affiliateId)}";
+        $"{CreateCanonicalProductUrl(asin)}?tag={Uri.EscapeDataString(affiliateId)}";
+
+    private static string CreateCanonicalProductUrl(string asin) =>
+        $"https://www.amazon.co.jp/dp/{asin}/";
 
     private static string? CreateImageUrl(string? imageId)
     {

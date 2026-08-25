@@ -55,6 +55,25 @@ public class AmazonDocumentResolverTests
         Assert.That(templateRenderer.Model!.ImageUrl, Is.Null);
     }
 
+    [Test]
+    public async Task 商品名を取得できない場合は通常oEmbed経路用URLを設定する()
+    {
+        var document = Markdown.Parse("[amazon:4844339648]", CreatePipeline());
+        var templateRenderer = new StubAmazonCardTemplateRenderer();
+        var metadataResolver = new AmazonProductMetadataResolver(
+            new StubAmazonProductPageFetcher(),
+            new AmazonProductPageParser());
+
+        await AmazonDocumentResolver.ResolveAsync(document, templateRenderer, "test-tag", metadataResolver);
+
+        var amazonInline = document.Descendants<AmazonInline>().Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(amazonInline.HtmlContent, Is.Empty);
+            Assert.That(amazonInline.OEmbedFallbackUrl, Is.EqualTo("https://www.amazon.co.jp/dp/4844339648/"));
+        });
+    }
+
     private static MarkdownPipeline CreatePipeline() =>
         new MarkdownPipelineBuilder()
             .Use(new AmazonAssociateExtension("test-tag"))
@@ -69,5 +88,11 @@ public class AmazonDocumentResolverTests
             Model = model;
             return Task.FromResult($"<div>{model.Title}</div>");
         }
+    }
+
+    private sealed class StubAmazonProductPageFetcher : IAmazonProductPageFetcher
+    {
+        public Task<AmazonProductFetchResult> FetchAsync(string asin) =>
+            Task.FromResult(AmazonProductFetchResult.Success("<html><body></body></html>"));
     }
 }

@@ -14,4 +14,6 @@ public sealed class AmazonInline(string asin, string? manualTitle, string? manua
     public string? ManualImageId { get; } = manualImageId;
 
     public string HtmlContent { get; set; } = string.Empty;
+
+    public string? OEmbedFallbackUrl { get; set; }
 }

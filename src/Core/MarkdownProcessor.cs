@@ -142,10 +142,22 @@ public class MarkdownProcessor : IMarkdownProcessor
             }
         }
 
-        if (markdownDocument.Descendants<OEmbedInline>().Any())
+        var oEmbedInlines = markdownDocument.Descendants<OEmbedInline>().ToArray();
+        var amazonFallbackInlines = markdownDocument.Descendants<AmazonInline>()
+            .Where(amazonInline => !string.IsNullOrEmpty(amazonInline.OEmbedFallbackUrl))
+            .ToArray();
+        if (oEmbedInlines.Length != 0 || amazonFallbackInlines.Length != 0)
         {
             await EnsureOEmbedProviderCatalogLoadedAsync();
-            await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+            if (oEmbedInlines.Length != 0)
+            {
+                await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+            }
+
+            foreach (var amazonInline in amazonFallbackInlines)
+            {
+                amazonInline.HtmlContent = await _oEmbedResolver.GetOEmbedHtmlAsync(amazonInline.OEmbedFallbackUrl!);
+            }
         }
 
         writer.GetStringBuilder().Clear();
