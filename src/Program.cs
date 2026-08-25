@@ -233,7 +233,7 @@ public class Program
             serviceProvider.GetRequiredService<RazorLightEngine>(),
             themePath));
         services.AddSingleton(_ => new AmazonProductMetadataResolver(
-            new AmazonProductHttpFetcher(new HttpClient { Timeout = TimeSpan.FromSeconds(15) }),
+            new AmazonProductHttpFetcher(AmazonProductHttpFetcher.CreateHttpClient()),
             new AmazonProductPageParser()));
 
         // サイトオプションの登録
