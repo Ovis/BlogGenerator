@@ -21,6 +21,7 @@ public class MarkdownProcessor : IMarkdownProcessor
         .UseYamlFrontMatter()
         .Build();
     private readonly Func<Task<OEmbedProviderCatalog>> _oEmbedProviderCatalogLoader;
+    private readonly IAmazonCardTemplateRenderer? _amazonCardTemplateRenderer;
 
     private OEmbedResolver _oEmbedResolver;
     private MarkdownPipeline? _contentPipeline;
@@ -32,13 +33,15 @@ public class MarkdownProcessor : IMarkdownProcessor
         string oEmbedDir,
         OEmbedResolver? oEmbedResolver = null,
         OEmbedCardParser? oEmbedParser = null,
-        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null)
+        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null,
+        IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null)
     {
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
         _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
         _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
         _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? LoadDefaultProviderCatalogAsync;
+        _amazonCardTemplateRenderer = amazonCardTemplateRenderer;
         _oEmbedProviderCatalogLoaded = oEmbedResolver is not null;
     }
 
@@ -109,6 +112,14 @@ public class MarkdownProcessor : IMarkdownProcessor
         }
 
         var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline!);
+
+        if (_amazonCardTemplateRenderer is not null && markdownDocument.Descendants<AmazonInline>().Any())
+        {
+            await AmazonDocumentResolver.ResolveAsync(
+                markdownDocument,
+                _amazonCardTemplateRenderer,
+                _siteOption.AmazonAssociateTag);
+        }
 
         // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())

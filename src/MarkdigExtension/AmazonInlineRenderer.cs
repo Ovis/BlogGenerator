@@ -11,6 +11,13 @@ public sealed class AmazonInlineRenderer(string affiliateId) : HtmlObjectRendere
 {
     protected override void Write(HtmlRenderer renderer, AmazonInline obj)
     {
+        if (!string.IsNullOrEmpty(obj.HtmlContent))
+        {
+            // HtmlContentはアプリケーション内のRazorテンプレートで生成済みの信頼済みHTMLだけを設定する
+            renderer.Write(obj.HtmlContent);
+            return;
+        }
+
         var productUrl = $"https://www.amazon.co.jp/dp/{obj.Asin}/";
         var displayUrl = string.IsNullOrWhiteSpace(affiliateId)
             ? productUrl

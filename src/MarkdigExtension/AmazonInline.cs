@@ -12,4 +12,6 @@ public sealed class AmazonInline(string asin, string? manualTitle, string? manua
     public string? ManualTitle { get; } = manualTitle;
 
     public string? ManualImageId { get; } = manualImageId;
+
+    public string HtmlContent { get; set; } = string.Empty;
 }

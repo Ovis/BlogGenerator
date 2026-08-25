@@ -223,6 +223,10 @@ public class Program
             .UseMemoryCachingProvider()
             .Build());
 
+        services.AddSingleton<IAmazonCardTemplateRenderer>(serviceProvider => new AmazonCardTemplateRenderer(
+            serviceProvider.GetRequiredService<RazorLightEngine>(),
+            themePath));
+
         // サイトオプションの登録
         services.AddSingleton(siteOption);
 
