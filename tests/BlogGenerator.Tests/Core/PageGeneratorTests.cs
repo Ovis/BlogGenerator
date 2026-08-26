@@ -1,4 +1,4 @@
-﻿using BlogGenerator.Core;
+using BlogGenerator.Core;
 using BlogGenerator.Models;
 using NUnit.Framework;
 using RazorLight;
@@ -178,12 +178,12 @@ public class PageGeneratorTests
     }
 
     [Test]
-    public async Task 危険文字を含むタグはURLエンコードで出力する()
+    public async Task 日本語や空白や記号を含むタグは共通slugでURLと物理パスを生成する()
     {
         var pageGenerator = CreatePageGenerator();
         var outputDir = CreateOutputDirectory();
-        const string tagName = "C#/fizz buzz?";
-        const string encodedTag = "C%23%2Ffizz%20buzz%3F";
+        const string tagName = "C#/日本語 fizz buzz?";
+        const string slug = "c~23~2F日本語-fizz-buzz~3F";
         var articles = new List<Article>
         {
             new(
@@ -200,18 +200,18 @@ public class PageGeneratorTests
         await pageGenerator.GenerateTagPagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
         await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
-        var tagIndexHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "index.html"));
-        var encodedTagPagePath = Path.Combine(outputDir, "tags", encodedTag, "index.html");
-        var encodedTagPageHtml = await File.ReadAllTextAsync(encodedTagPagePath);
-        var articleHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "tagged.html"));
+        var tagIndexHtml = System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "index.html")));
+        var tagPagePath = Path.Combine(outputDir, "tags", slug, "index.html");
+        var tagPageHtml = System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(tagPagePath));
+        var articleHtml = System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "tagged.html")));
 
         Assert.Multiple(() =>
         {
-            Assert.That(File.Exists(encodedTagPagePath), Is.True);
-            Assert.That(tagIndexHtml, Does.Contain($"/blog/tags/{encodedTag}"));
-            Assert.That(encodedTagPageHtml, Does.Contain($"/blog/tags/{encodedTag}"));
-            Assert.That(articleHtml, Does.Contain($"/blog/tags/{encodedTag}"));
-            Assert.That(tagIndexHtml, Does.Contain("C#/fizz buzz? (1)"));
+            Assert.That(File.Exists(tagPagePath), Is.True);
+            Assert.That(tagIndexHtml, Does.Contain($"/blog/tags/{slug}"));
+            Assert.That(tagPageHtml, Does.Contain($"/blog/tags/{slug}"));
+            Assert.That(articleHtml, Does.Contain($"/blog/tags/{slug}"));
+            Assert.That(tagIndexHtml, Does.Contain("C#/日本語 fizz buzz? (1)"));
         });
     }
 
