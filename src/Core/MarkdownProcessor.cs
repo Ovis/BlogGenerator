@@ -156,7 +156,14 @@ public class MarkdownProcessor : IMarkdownProcessor
 
             foreach (var amazonInline in amazonFallbackInlines)
             {
-                amazonInline.HtmlContent = await _oEmbedResolver.GetOEmbedHtmlAsync(amazonInline.OEmbedFallbackUrl!);
+                var canonicalUrl = amazonInline.OEmbedFallbackUrl!;
+                var fallbackHtml = await _oEmbedResolver.GetOEmbedHtmlAsync(canonicalUrl);
+
+                // OGP/oEmbedカードが取得できた場合はそのHTMLを保持し、通常リンクまで落ちた時だけhrefへアソシエイトタグを付ける
+                amazonInline.HtmlContent = fallbackHtml == OEmbedHtmlFactory.CreateStandardLink(canonicalUrl) &&
+                    !string.IsNullOrEmpty(amazonInline.FallbackLinkUrl)
+                    ? OEmbedHtmlFactory.CreateStandardLink(amazonInline.FallbackLinkUrl, canonicalUrl)
+                    : fallbackHtml;
             }
         }
 
