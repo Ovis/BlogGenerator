@@ -19,18 +19,20 @@ public static class OEmbedHtmlFactory
             .ToString();
     }
 
-    public static string CreateStandardLink(string url)
+    public static string CreateStandardLink(string url) => CreateStandardLink(url, url);
+
+    public static string CreateStandardLink(string href, string displayUrl)
     {
-        if (!TryGetSafeHttpUrl(url, out var safeUrl))
+        if (!TryGetSafeHttpUrl(href, out var safeHref))
         {
-            return $"<span>{EscapeText(url)}</span>";
+            return $"<span>{EscapeText(displayUrl)}</span>";
         }
 
         return new StringBuilder()
             .Append("<a href=\"")
-            .Append(EscapeAttribute(safeUrl))
+            .Append(EscapeAttribute(safeHref))
             .Append("\" rel=\"noopener noreferrer\" target=\"_blank\">")
-            .Append(EscapeText(safeUrl))
+            .Append(EscapeText(displayUrl))
             .Append("</a>")
             .ToString();
     }
