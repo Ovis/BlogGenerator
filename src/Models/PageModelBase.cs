@@ -51,6 +51,22 @@
                 : TagCatalog.NormalizeDisplayValue(tag);
         }
 
+        public IReadOnlyCollection<TagCatalogEntry> GetArticleTags(Article article)
+        {
+            var entries = new List<TagCatalogEntry>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var tag in article.Tags)
+            {
+                if (TagCatalog.TryGet(tag, out var entry) && seen.Add(entry.IdentityKey))
+                {
+                    entries.Add(entry);
+                }
+            }
+
+            return entries;
+        }
+
         public static string CombineUrlPath(params string[] segments)
         {
             var nonEmptySegments = segments
