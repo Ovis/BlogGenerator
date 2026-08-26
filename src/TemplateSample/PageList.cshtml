@@ -36,7 +36,7 @@
                                     @foreach (var tag in article.Tags)
                                     {
                                         <li class="tag is-link is-light">
-                                            <a class="has-text-dark" href="@Model.GenerateTagPath(tag)">@(tag)</a>
+                                            <a class="has-text-dark" href="@Model.GenerateTagPath(tag)">@Model.GenerateTagDisplayName(tag)</a>
                                         </li>
                                     }
                                 </ul>
