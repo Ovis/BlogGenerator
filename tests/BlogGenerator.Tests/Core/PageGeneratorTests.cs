@@ -1,4 +1,4 @@
-﻿using BlogGenerator.Core;
+using BlogGenerator.Core;
 using BlogGenerator.Models;
 using NUnit.Framework;
 using RazorLight;
@@ -200,10 +200,10 @@ public class PageGeneratorTests
         await pageGenerator.GenerateTagPagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
         await pageGenerator.GenerateArticlePagesAsync(articles, outputDir, new TrustedHtml("<aside>stub</aside>"));
 
-        var tagIndexHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "index.html"));
+        var tagIndexHtml = System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(Path.Combine(outputDir, "tags", "index.html")));
         var tagPagePath = Path.Combine(outputDir, "tags", slug, "index.html");
-        var tagPageHtml = await File.ReadAllTextAsync(tagPagePath);
-        var articleHtml = await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "tagged.html"));
+        var tagPageHtml = System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(tagPagePath));
+        var articleHtml = System.Net.WebUtility.HtmlDecode(await File.ReadAllTextAsync(Path.Combine(outputDir, "posts", "tagged.html")));
 
         Assert.Multiple(() =>
         {
