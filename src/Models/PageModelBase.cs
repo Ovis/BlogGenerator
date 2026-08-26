@@ -4,6 +4,8 @@
     {
         public SiteOption SiteOption { get; set; } = new();
 
+        public TagCatalog TagCatalog { get; set; } = TagCatalog.Build([]);
+
         public string GeneratePath(string path)
         {
             if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase))
@@ -34,12 +36,19 @@
 
         public string GenerateTagPath(string tag)
         {
-            return GeneratePath($"/tags/{EncodeTagSegment(tag)}");
+            if (!TagCatalog.TryGet(tag, out var entry))
+            {
+                throw new InvalidOperationException($"Tag is not present in the catalog: '{tag}'");
+            }
+
+            return GeneratePath($"/tags/{entry.Slug}");
         }
 
-        public static string EncodeTagSegment(string tag)
+        public string GenerateTagDisplayName(string tag)
         {
-            return Uri.EscapeDataString(tag);
+            return TagCatalog.TryGet(tag, out var entry)
+                ? entry.DisplayName
+                : TagCatalog.NormalizeDisplayValue(tag);
         }
 
         public static string CombineUrlPath(params string[] segments)
