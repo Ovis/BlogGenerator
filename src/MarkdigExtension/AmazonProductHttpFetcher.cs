@@ -6,9 +6,25 @@ namespace BlogGenerator.MarkdigExtension;
 /// <summary>
 /// Amazon商品ページをHTTPで取得するfetcher
 /// </summary>
-public sealed class AmazonProductHttpFetcher(HttpClient httpClient) : IAmazonProductPageFetcher
+public sealed class AmazonProductHttpFetcher : IAmazonProductPageFetcher
 {
-    private readonly HttpClient _httpClient = httpClient;
+    public static readonly TimeSpan MinimumRequestInterval = TimeSpan.FromSeconds(2);
+
+    private readonly HttpClient _httpClient;
+    private readonly SemaphoreSlim _requestSemaphore = new(1, 1);
+    private readonly Func<DateTimeOffset> _utcNowProvider;
+    private readonly Func<TimeSpan, Task> _delayAsync;
+    private DateTimeOffset? _lastRequestStartedAt;
+
+    public AmazonProductHttpFetcher(
+        HttpClient httpClient,
+        Func<DateTimeOffset>? utcNowProvider = null,
+        Func<TimeSpan, Task>? delayAsync = null)
+    {
+        _httpClient = httpClient;
+        _utcNowProvider = utcNowProvider ?? (() => DateTimeOffset.UtcNow);
+        _delayAsync = delayAsync ?? Task.Delay;
+    }
 
     /// <summary>
     /// Amazon商品ページ取得用のHTTPクライアントを作成する
@@ -29,28 +45,54 @@ public sealed class AmazonProductHttpFetcher(HttpClient httpClient) : IAmazonPro
 
     public async Task<AmazonProductFetchResult> FetchAsync(string asin)
     {
-        var productUrl = $"https://www.amazon.co.jp/dp/{asin}/";
-        using var request = new HttpRequestMessage(HttpMethod.Get, productUrl);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
-        request.Headers.AcceptLanguage.ParseAdd("ja-JP,ja;q=0.9");
-        request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (compatible; BlogGenerator/1.0)");
-
+        await _requestSemaphore.WaitAsync();
         try
         {
-            using var response = await _httpClient.SendAsync(request);
-            var content = await response.Content.ReadAsStringAsync();
+            await WaitForRequestIntervalAsync();
+            _lastRequestStartedAt = _utcNowProvider();
 
-            return response.IsSuccessStatusCode
-                ? AmazonProductFetchResult.Success(content)
-                : AmazonProductFetchResult.Failure(response.StatusCode, content);
+            var productUrl = $"https://www.amazon.co.jp/dp/{asin}/";
+            using var request = new HttpRequestMessage(HttpMethod.Get, productUrl);
+            request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+            request.Headers.AcceptLanguage.ParseAdd("ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7");
+            request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36");
+
+            try
+            {
+                using var response = await _httpClient.SendAsync(request);
+                var content = await response.Content.ReadAsStringAsync();
+
+                return response.IsSuccessStatusCode
+                    ? AmazonProductFetchResult.Success(content)
+                    : AmazonProductFetchResult.Failure(response.StatusCode, content);
+            }
+            catch (TaskCanceledException exception)
+            {
+                return AmazonProductFetchResult.Failure(null, string.Empty, exception);
+            }
+            catch (HttpRequestException exception)
+            {
+                return AmazonProductFetchResult.Failure(null, string.Empty, exception);
+            }
         }
-        catch (TaskCanceledException exception)
+        finally
         {
-            return AmazonProductFetchResult.Failure(null, string.Empty, exception);
+            _requestSemaphore.Release();
         }
-        catch (HttpRequestException exception)
+    }
+
+    private async Task WaitForRequestIntervalAsync()
+    {
+        if (!_lastRequestStartedAt.HasValue)
         {
-            return AmazonProductFetchResult.Failure(null, string.Empty, exception);
+            return;
+        }
+
+        var elapsed = _utcNowProvider() - _lastRequestStartedAt.Value;
+        var delay = MinimumRequestInterval - elapsed;
+        if (delay > TimeSpan.Zero)
+        {
+            await _delayAsync(delay);
         }
     }
 }

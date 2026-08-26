@@ -57,7 +57,7 @@ public class AmazonDocumentResolverTests
     }
 
     [Test]
-    public async Task 商品名を取得できない場合は通常oEmbed経路用URLを設定する()
+    public async Task 商品名を取得できない場合はcanonicalURLでoEmbedし最終リンク用にアソシエイトURLを保持する()
     {
         var document = Markdown.Parse("[amazon:4844339648]", CreatePipeline());
         var templateRenderer = new StubAmazonCardTemplateRenderer();
@@ -72,6 +72,7 @@ public class AmazonDocumentResolverTests
         {
             Assert.That(amazonInline.HtmlContent, Is.Empty);
             Assert.That(amazonInline.OEmbedFallbackUrl, Is.EqualTo("https://www.amazon.co.jp/dp/4844339648/"));
+            Assert.That(amazonInline.FallbackLinkUrl, Is.EqualTo("https://www.amazon.co.jp/dp/4844339648/?tag=test-tag"));
         });
     }
 
