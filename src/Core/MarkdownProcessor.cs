@@ -21,6 +21,9 @@ public class MarkdownProcessor : IMarkdownProcessor
         .UseYamlFrontMatter()
         .Build();
     private readonly Func<Task<OEmbedProviderCatalog>> _oEmbedProviderCatalogLoader;
+    private readonly IAmazonCardTemplateRenderer? _amazonCardTemplateRenderer;
+    private readonly AmazonProductMetadataResolver? _amazonProductMetadataResolver;
+    private readonly AmazonProductMetadataCacheSettings? _amazonCacheSettings;
 
     private OEmbedResolver _oEmbedResolver;
     private MarkdownPipeline? _contentPipeline;
@@ -32,17 +35,24 @@ public class MarkdownProcessor : IMarkdownProcessor
         string oEmbedDir,
         OEmbedResolver? oEmbedResolver = null,
         OEmbedCardParser? oEmbedParser = null,
-        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null)
+        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null,
+        IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null,
+        AmazonProductMetadataResolver? amazonProductMetadataResolver = null,
+        AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
     {
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
         _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
         _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
         _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? LoadDefaultProviderCatalogAsync;
+        _amazonCardTemplateRenderer = amazonCardTemplateRenderer;
+        _amazonProductMetadataResolver = amazonProductMetadataResolver;
+        _amazonCacheSettings = amazonCacheSettings;
         _oEmbedProviderCatalogLoaded = oEmbedResolver is not null;
     }
 
     public ConcurrentDictionary<string, OEmbedCacheEntry> OEmbedCache => _oEmbedResolver.OEmbedCache;
+    public ConcurrentDictionary<string, AmazonProductMetadataCacheEntry> AmazonProductMetadataCache => _amazonProductMetadataResolver?.Cache ?? [];
 
     public async Task InitializeAsync()
     {
@@ -110,6 +120,15 @@ public class MarkdownProcessor : IMarkdownProcessor
 
         var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline!);
 
+        if (_amazonCardTemplateRenderer is not null && markdownDocument.Descendants<AmazonInline>().Any())
+        {
+            await AmazonDocumentResolver.ResolveAsync(
+                markdownDocument,
+                _amazonCardTemplateRenderer,
+                _siteOption.AmazonAssociateTag,
+                _amazonProductMetadataResolver);
+        }
+
         // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
         {
@@ -123,10 +142,22 @@ public class MarkdownProcessor : IMarkdownProcessor
             }
         }
 
-        if (markdownDocument.Descendants<OEmbedInline>().Any())
+        var oEmbedInlines = markdownDocument.Descendants<OEmbedInline>().ToArray();
+        var amazonFallbackInlines = markdownDocument.Descendants<AmazonInline>()
+            .Where(amazonInline => !string.IsNullOrEmpty(amazonInline.OEmbedFallbackUrl))
+            .ToArray();
+        if (oEmbedInlines.Length != 0 || amazonFallbackInlines.Length != 0)
         {
             await EnsureOEmbedProviderCatalogLoadedAsync();
-            await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+            if (oEmbedInlines.Length != 0)
+            {
+                await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
+            }
+
+            foreach (var amazonInline in amazonFallbackInlines)
+            {
+                amazonInline.HtmlContent = await _oEmbedResolver.GetOEmbedHtmlAsync(amazonInline.OEmbedFallbackUrl!);
+            }
         }
 
         writer.GetStringBuilder().Clear();
@@ -163,6 +194,11 @@ public class MarkdownProcessor : IMarkdownProcessor
             if (!string.IsNullOrEmpty(_oEmbedDir))
             {
                 await OEmbedCacheStore.LoadAsync(_oEmbedDir, _oEmbedResolver.OEmbedCache);
+            }
+
+            if (_amazonProductMetadataResolver is not null && !string.IsNullOrEmpty(_amazonCacheSettings?.FilePath))
+            {
+                await AmazonProductMetadataCacheStore.LoadAsync(_amazonCacheSettings.FilePath, _amazonProductMetadataResolver.Cache);
             }
 
             _contentPipeline = new MarkdownPipelineBuilder()

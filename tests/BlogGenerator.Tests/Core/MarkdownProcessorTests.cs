@@ -279,6 +279,41 @@ public class MarkdownProcessorTests
         });
     }
 
+    [Test]
+    public async Task Amazon商品名の取得失敗時は通常oEmbedキャッシュを本文へ展開できる()
+    {
+        const string asin = "4844339648";
+        const string fallbackUrl = "https://www.amazon.co.jp/dp/4844339648/";
+        const string expectedHtml = "<div class='oembed-card'>Amazon fallback</div>";
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        await File.WriteAllTextAsync(Path.Combine(inputDir, "amazon.md"), $"[amazon:{asin}]");
+
+        var oEmbedResolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            new HttpClient(new ThrowIfCalledHandler()));
+        oEmbedResolver.OEmbedCache[fallbackUrl] = OEmbedCacheEntry.CreateSuccess(
+            expectedHtml,
+            DateTimeOffset.UtcNow,
+            TimeSpan.FromDays(180));
+        var metadataResolver = new AmazonProductMetadataResolver(
+            new EmptyAmazonProductPageFetcher(),
+            new AmazonProductPageParser());
+        var processor = new MarkdownProcessor(
+            new SiteOption
+            {
+                SiteUrl = "https://example.com/blog/",
+                AmazonAssociateTag = "test-tag"
+            },
+            string.Empty,
+            oEmbedResolver,
+            amazonCardTemplateRenderer: new StubAmazonCardTemplateRenderer(),
+            amazonProductMetadataResolver: metadataResolver);
+
+        var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/blog/");
+
+        Assert.That(articles[0].Body, Does.Contain(expectedHtml));
+    }
+
     private MarkdownProcessor CreateProcessor(
         IDictionary<string, string>? cachedEntries = null,
         OEmbedCardParser? parser = null)
@@ -335,5 +370,17 @@ public class MarkdownProcessorTests
         {
             throw new AssertionException($"HTTP should not be called. URL: {request.RequestUri}");
         }
+    }
+
+    private sealed class EmptyAmazonProductPageFetcher : IAmazonProductPageFetcher
+    {
+        public Task<AmazonProductFetchResult> FetchAsync(string asin) =>
+            Task.FromResult(AmazonProductFetchResult.Success("<html><body></body></html>"));
+    }
+
+    private sealed class StubAmazonCardTemplateRenderer : IAmazonCardTemplateRenderer
+    {
+        public Task<string> RenderAsync(AmazonCardModel model) =>
+            Task.FromResult("<div class='amazon-card'>unused</div>");
     }
 }

@@ -1,0 +1,13 @@
+@model BlogGenerator.MarkdigExtension.AmazonCardModel
+<span class="amazon-card">
+    @if (!string.IsNullOrWhiteSpace(Model.ImageUrl))
+    {
+        <a class="amazon-card-image-link" href="@Model.ProductUrl" target="_blank" rel="noopener noreferrer">
+            <img class="amazon-card-image" src="@Model.ImageUrl" alt="" loading="lazy" />
+        </a>
+    }
+    <span class="amazon-card-content">
+        <a class="amazon-card-title" href="@Model.ProductUrl" target="_blank" rel="noopener noreferrer">@Model.Title</a>
+        <a class="amazon-card-button" href="@Model.ProductUrl" target="_blank" rel="noopener noreferrer">Amazonで見る</a>
+    </span>
+</span>
