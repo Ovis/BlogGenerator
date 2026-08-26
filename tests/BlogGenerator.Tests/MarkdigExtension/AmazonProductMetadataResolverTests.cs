@@ -34,10 +34,7 @@ public class AmazonProductMetadataResolverTests
         var cachedMetadata = new AmazonProductMetadata("キャッシュ商品", null);
         var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
         cache["B0ABC12345"] = AmazonProductMetadataCacheEntry.CreateSuccess(
-            "B0ABC12345",
-            cachedMetadata,
-            Now,
-            TimeSpan.FromDays(365));
+            "B0ABC12345", cachedMetadata, Now, TimeSpan.FromDays(365));
         var fetcher = new StubAmazonProductPageFetcher(AmazonProductFetchResult.Success(CreateProductHtml()));
         var resolver = CreateResolver(fetcher, cache);
 
@@ -56,10 +53,7 @@ public class AmazonProductMetadataResolverTests
         var staleMetadata = new AmazonProductMetadata("古い商品名", "https://m.media-amazon.com/images/I/old.jpg");
         var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
         cache["B0ABC12345"] = AmazonProductMetadataCacheEntry.CreateSuccess(
-            "B0ABC12345",
-            staleMetadata,
-            Now.AddDays(-366),
-            TimeSpan.FromDays(365));
+            "B0ABC12345", staleMetadata, Now.AddDays(-366), TimeSpan.FromDays(365));
         var fetcher = new StubAmazonProductPageFetcher(AmazonProductFetchResult.Failure(HttpStatusCode.ServiceUnavailable, string.Empty));
         var resolver = CreateResolver(fetcher, cache);
 
@@ -81,49 +75,66 @@ public class AmazonProductMetadataResolverTests
         var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
         var resolver = CreateResolver(fetcher, cache);
 
-        var metadata = await resolver.ResolveAsync("B0ABC12345");
+        await resolver.ResolveAsync("B0ABC12345");
 
         Assert.Multiple(() =>
         {
-            Assert.That(metadata, Is.Null);
             Assert.That(cache["B0ABC12345"].FailureKind, Is.EqualTo(AmazonProductMetadataFailureKind.NotFound));
             Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddDays(30)));
         });
     }
 
-    [Test]
-    public async Task CAPTCHA応答は6時間のblockedキャッシュへ保存する()
+    [TestCase(HttpStatusCode.ServiceUnavailable)]
+    [TestCase(HttpStatusCode.OK)]
+    public async Task CAPTCHA応答はHTTPステータスに関係なく6時間のblockedキャッシュへ保存する(HttpStatusCode statusCode)
     {
-        var fetcher = new StubAmazonProductPageFetcher(AmazonProductFetchResult.Failure(
-            HttpStatusCode.ServiceUnavailable,
-            "<html>To discuss automated access to Amazon data please contact api-services-support@amazon.com. captcha</html>"));
+        const string blockedHtml = "<html>To discuss automated access to Amazon data please contact api-services-support@amazon.com. captcha</html>";
+        var result = statusCode == HttpStatusCode.OK
+            ? AmazonProductFetchResult.Success(blockedHtml)
+            : AmazonProductFetchResult.Failure(statusCode, blockedHtml);
         var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
-        var resolver = CreateResolver(fetcher, cache);
+        var resolver = CreateResolver(new StubAmazonProductPageFetcher(result), cache);
 
-        var metadata = await resolver.ResolveAsync("B0ABC12345");
+        await resolver.ResolveAsync("B0ABC12345");
 
         Assert.Multiple(() =>
         {
-            Assert.That(metadata, Is.Null);
             Assert.That(cache["B0ABC12345"].FailureKind, Is.EqualTo(AmazonProductMetadataFailureKind.Blocked));
             Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddHours(6)));
         });
     }
 
     [Test]
-    public async Task 商品名を取得できない応答は7日間のparseMissキャッシュへ保存する()
+    public async Task 商品ページではない200応答は6時間のunexpectedResponseキャッシュへ保存する()
     {
-        var fetcher = new StubAmazonProductPageFetcher(AmazonProductFetchResult.Success("<html><body></body></html>"));
         var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
-        var resolver = CreateResolver(fetcher, cache);
+        var resolver = CreateResolver(
+            new StubAmazonProductPageFetcher(AmazonProductFetchResult.Success("<html><body>トップページ</body></html>")),
+            cache);
 
-        var metadata = await resolver.ResolveAsync("B0ABC12345");
+        await resolver.ResolveAsync("B0ABC12345");
 
         Assert.Multiple(() =>
         {
-            Assert.That(metadata, Is.Null);
+            Assert.That(cache["B0ABC12345"].FailureKind, Is.EqualTo(AmazonProductMetadataFailureKind.UnexpectedResponse));
+            Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddHours(6)));
+        });
+    }
+
+    [Test]
+    public async Task 商品ページだが商品名を取得できない応答は1日のparseMissキャッシュへ保存する()
+    {
+        var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
+        var resolver = CreateResolver(
+            new StubAmazonProductPageFetcher(AmazonProductFetchResult.Success("<html><body><div id=\"dp\"></div></body></html>")),
+            cache);
+
+        await resolver.ResolveAsync("B0ABC12345");
+
+        Assert.Multiple(() =>
+        {
             Assert.That(cache["B0ABC12345"].FailureKind, Is.EqualTo(AmazonProductMetadataFailureKind.ParseMiss));
-            Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddDays(7)));
+            Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddDays(1)));
         });
     }
 
