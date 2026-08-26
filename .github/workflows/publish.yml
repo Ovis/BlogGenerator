@@ -25,15 +25,19 @@ jobs:
       - name: Extract version from tag
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
-      - name: Update csproj Version
-        run: |
-          sed -i "s|<Version>.*</Version>|<Version>${{ env.VERSION }}</Version>|g" ./src/BlogGenerator.csproj
-
       - name: Pack NuGet package
-        run: dotnet pack ./src/BlogGenerator.csproj --configuration Release --output ./artifacts/nuget
+        run: |
+          dotnet pack ./src/BlogGenerator.csproj \
+            --configuration Release \
+            --output ./artifacts/nuget \
+            -p:Version=${{ env.VERSION }}
 
       - name: Publish executable
-        run: dotnet publish ./src/BlogGenerator.csproj --configuration Release --output ./artifacts/publish
+        run: |
+          dotnet publish ./src/BlogGenerator.csproj \
+            --configuration Release \
+            --output ./artifacts/publish \
+            -p:Version=${{ env.VERSION }}
 
       - name: Create publish ZIP archive
         run: |
