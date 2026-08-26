@@ -14,12 +14,6 @@ public static partial class AmazonDocumentResolver
         string affiliateId,
         AmazonProductMetadataResolver? metadataResolver = null)
     {
-        if (string.IsNullOrWhiteSpace(affiliateId))
-        {
-            // タグ未設定時はカードを出さず、rendererが通常リンクへ劣化表示する
-            return;
-        }
-
         foreach (var amazonInline in markdownDocument.Descendants<AmazonInline>())
         {
             var manualImageUrl = CreateImageUrl(amazonInline.ManualImageId);
@@ -37,15 +31,22 @@ public static partial class AmazonDocumentResolver
 
             var model = new AmazonCardModel(
                 amazonInline.Asin,
-                CreateAffiliateProductUrl(amazonInline.Asin, affiliateId),
+                CreateProductUrl(amazonInline.Asin, affiliateId),
                 title,
                 manualImageUrl ?? fetchedMetadata?.ImageUrl);
             amazonInline.HtmlContent = await templateRenderer.RenderAsync(model);
         }
     }
 
-    private static string CreateAffiliateProductUrl(string asin, string affiliateId) =>
-        $"{CreateCanonicalProductUrl(asin)}?tag={Uri.EscapeDataString(affiliateId)}";
+    private static string CreateProductUrl(string asin, string affiliateId)
+    {
+        var productUrl = CreateCanonicalProductUrl(asin);
+
+        // カード表示はアソシエイト参加の有無と独立させ、未設定時は追跡パラメータなしの通常商品URLへリンクする
+        return string.IsNullOrWhiteSpace(affiliateId)
+            ? productUrl
+            : $"{productUrl}?tag={Uri.EscapeDataString(affiliateId)}";
+    }
 
     private static string CreateCanonicalProductUrl(string asin) =>
         $"https://www.amazon.co.jp/dp/{asin}/";

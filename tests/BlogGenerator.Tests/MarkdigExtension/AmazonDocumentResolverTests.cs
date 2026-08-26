@@ -29,7 +29,7 @@ public class AmazonDocumentResolverTests
     }
 
     [Test]
-    public async Task タグ未設定時はテンプレートを描画せず通常リンクへ委ねる()
+    public async Task タグ未設定時も追跡パラメータなしでカードを描画する()
     {
         var document = Markdown.Parse("[amazon:4844339648,title=\"商品名\"]", CreatePipeline());
         var templateRenderer = new StubAmazonCardTemplateRenderer();
@@ -39,8 +39,9 @@ public class AmazonDocumentResolverTests
         var amazonInline = document.Descendants<AmazonInline>().Single();
         Assert.Multiple(() =>
         {
-            Assert.That(amazonInline.HtmlContent, Is.Empty);
-            Assert.That(templateRenderer.Model, Is.Null);
+            Assert.That(amazonInline.HtmlContent, Is.EqualTo("<div>商品名</div>"));
+            Assert.That(templateRenderer.Model, Is.Not.Null);
+            Assert.That(templateRenderer.Model!.ProductUrl, Is.EqualTo("https://www.amazon.co.jp/dp/4844339648/"));
         });
     }
 
