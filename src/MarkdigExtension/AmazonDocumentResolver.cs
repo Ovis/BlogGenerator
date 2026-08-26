@@ -24,8 +24,9 @@ public static partial class AmazonDocumentResolver
             var title = amazonInline.ManualTitle ?? fetchedMetadata?.Title;
             if (string.IsNullOrWhiteSpace(title))
             {
-                // 商品名が得られない場合は、Amazon専用の壊れたカードを出さず既存のoEmbed経路へ戻す
+                // oEmbedの取得対象はcanonical URLのままにし、最終リンクだけアソシエイトURLへ向ける
                 amazonInline.OEmbedFallbackUrl = CreateCanonicalProductUrl(amazonInline.Asin);
+                amazonInline.FallbackLinkUrl = CreateProductUrl(amazonInline.Asin, affiliateId);
                 continue;
             }
 
