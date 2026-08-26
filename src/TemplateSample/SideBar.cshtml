@@ -69,23 +69,19 @@
     <h1 class="title is-5">Tags</h1>
     <nav class="panel panel-white">
         @{
-            var tags = model.Articles.SelectMany(x => x.Tags).Distinct().ToArray()
-            .Select(tag => new
-            {
-                Tag = tag,
-                Count = model.Articles.Count(x => x.Tags.Contains(tag))
-            })
-            .OrderByDescending(r => r.Count)
-            .Take(10)
-            .ToArray();
+            var tags = Model.TagCatalog.Entries
+                .OrderByDescending(tag => tag.Count)
+                .ThenBy(tag => tag.DisplayName)
+                .Take(10)
+                .ToArray();
 
             foreach (var tag in tags)
             {
-                <a class="panel-block" href="@Model.GenerateTagPath(tag.Tag)">
+                <a class="panel-block" href="@Model.GenerateTagPath(tag.DisplayName)">
                     <span class="panel-icon">
                         <i class="fas fa-book" aria-hidden="true"></i>
                     </span>
-                    <span>@tag.Tag (@tag.Count)</span>
+                    <span>@tag.DisplayName (@tag.Count)</span>
                 </a>
             }
         }
