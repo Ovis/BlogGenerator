@@ -34,10 +34,10 @@
                                 </span>
                             </div>
                             <ul class="column tags pl-0">
-                                @foreach (var tag in article.Tags)
+                                @foreach (var tag in Model.GetArticleTags(article))
                                 {
                                     <li class="tag is-link is-light">
-                                        <a class="has-text-dark" href="@Model.GenerateTagPath(tag)">@Model.GenerateTagDisplayName(tag)</a>
+                                        <a class="has-text-dark" href="@Model.GenerateTagPath(tag.DisplayName)">@tag.DisplayName</a>
                                     </li>
                                 }
                             </ul>
