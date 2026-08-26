@@ -2,16 +2,9 @@
 @using BlogGenerator.Models
 @inherits TemplatePage<PageModel>
 @{
-    var model = Model;
-    var article = model.Articles.First();
-
-    var tags = model.Articles.SelectMany(x => x.Tags).Distinct().ToArray()
-        .Select(tag => new
-        {
-            Tag = tag,
-            Count = model.Articles.Count(x => x.Tags.Contains(tag))
-        })
-        .OrderByDescending(r => r.Count)
+    var tags = Model.TagCatalog.Entries
+        .OrderByDescending(tag => tag.Count)
+        .ThenBy(tag => tag.DisplayName)
         .ToArray();
 }
 
@@ -20,11 +13,11 @@
         <div class="content">
             @foreach (var tag in tags)
             {
-                <a class="panel-block" href="@Model.GenerateTagPath(tag.Tag)">
+                <a class="panel-block" href="@Model.GenerateTagPath(tag.DisplayName)">
                     <span class="panel-icon">
                         <i class="fas fa-book" aria-hidden="true"></i>
                     </span>
-                    <span>@tag.Tag (@tag.Count)</span>
+                    <span>@tag.DisplayName (@tag.Count)</span>
                 </a>
             }
         </div>
