@@ -1,6 +1,6 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
-using System.IO.Compression;
 using System.Text;
 using BlogGenerator.MarkdigExtension;
 using NUnit.Framework;
@@ -11,7 +11,7 @@ namespace BlogGenerator.Tests.MarkdigExtension;
 public class AmazonProductHttpFetcherTests
 {
     [Test]
-    public async Task 商品ページを日本語優先のHTMLリクエストとして取得する()
+    public async Task 商品ページを一般的なWindows版Chrome相当のヘッダーで取得する()
     {
         HttpRequestMessage? capturedRequest = null;
         var httpClient = new HttpClient(new StubHttpMessageHandler(request =>
@@ -31,9 +31,36 @@ public class AmazonProductHttpFetcherTests
             Assert.That(result.IsSuccess, Is.True);
             Assert.That(capturedRequest!.RequestUri!.ToString(), Is.EqualTo("https://www.amazon.co.jp/dp/B0ABC12345/"));
             Assert.That(capturedRequest.Headers.AcceptLanguage.ToString(), Does.Contain("ja-JP"));
-            Assert.That(capturedRequest.Headers.Accept.ToString(), Does.Contain("text/html"));
-            Assert.That(capturedRequest.Headers.UserAgent.ToString(), Does.Contain("BlogGenerator"));
+            Assert.That(capturedRequest.Headers.Accept.ToString(), Does.Contain("application/xhtml+xml"));
+            Assert.That(capturedRequest.Headers.UserAgent.ToString(), Does.Contain("Windows NT 10.0"));
+            Assert.That(capturedRequest.Headers.UserAgent.ToString(), Does.Contain("Chrome/142.0.0.0"));
         });
+    }
+
+    [Test]
+    public async Task 連続取得時はリクエスト開始間隔を最低2秒空ける()
+    {
+        var now = new DateTimeOffset(2026, 8, 26, 0, 0, 0, TimeSpan.Zero);
+        var requestedDelays = new List<TimeSpan>();
+        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html></html>")
+        }));
+        var fetcher = new AmazonProductHttpFetcher(
+            httpClient,
+            () => now,
+            delay =>
+            {
+                requestedDelays.Add(delay);
+                now += delay;
+                return Task.CompletedTask;
+            });
+
+        await fetcher.FetchAsync("B0ABC12345");
+        now += TimeSpan.FromMilliseconds(500);
+        await fetcher.FetchAsync("B0ABC12346");
+
+        Assert.That(requestedDelays, Is.EqualTo(new[] { TimeSpan.FromMilliseconds(1500) }));
     }
 
     [Test]
