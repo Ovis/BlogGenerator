@@ -109,7 +109,7 @@ public class TagCatalogTests
             FileName: fileName,
             Title: fileName,
             Body: "<p>body</p>",
-            Tags: tags,
+            Tags: tags.ToList(),
             Published: DateTimeOffset.Parse("2026-08-26T00:00:00+09:00"),
             RelativeDirectoryPath: "posts",
             RootRelativeDirectoryPath: "/blog/posts",
