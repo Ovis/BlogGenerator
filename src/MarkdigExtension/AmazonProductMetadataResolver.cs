@@ -9,8 +9,8 @@ namespace BlogGenerator.MarkdigExtension;
 public sealed class AmazonProductMetadataResolver
 {
     public static readonly TimeSpan SuccessTtl = TimeSpan.FromDays(365);
-    public static readonly TimeSpan BlockedAndNetworkErrorTtl = TimeSpan.FromHours(6);
-    public static readonly TimeSpan ParseMissTtl = TimeSpan.FromDays(7);
+    public static readonly TimeSpan BlockedNetworkAndUnexpectedResponseTtl = TimeSpan.FromHours(6);
+    public static readonly TimeSpan ParseMissTtl = TimeSpan.FromDays(1);
     public static readonly TimeSpan NotFoundTtl = TimeSpan.FromDays(30);
 
     private readonly IAmazonProductPageFetcher _fetcher;
@@ -79,6 +79,11 @@ public sealed class AmazonProductMetadataResolver
 
     private AmazonProductMetadataResolution ResolveFetchResult(AmazonProductFetchResult fetchResult)
     {
+        if (ContainsBlockMarker(fetchResult.Content))
+        {
+            return new AmazonProductMetadataResolution(null, AmazonProductMetadataFailureKind.Blocked, "Amazon blocked the product page request");
+        }
+
         if (!fetchResult.IsSuccess)
         {
             return new AmazonProductMetadataResolution(
@@ -87,37 +92,43 @@ public sealed class AmazonProductMetadataResolver
                 fetchResult.Error?.Message ?? fetchResult.StatusCode?.ToString() ?? "Amazon product page request failed");
         }
 
+        if (!LooksLikeProductPage(fetchResult.Content))
+        {
+            return new AmazonProductMetadataResolution(null, AmazonProductMetadataFailureKind.UnexpectedResponse, "Amazon returned a non-product page");
+        }
+
         var metadata = _parser.Parse(fetchResult.Content);
         return metadata.Title is null
             ? new AmazonProductMetadataResolution(null, AmazonProductMetadataFailureKind.ParseMiss, "Product title could not be extracted")
             : new AmazonProductMetadataResolution(metadata, AmazonProductMetadataFailureKind.NetworkError, string.Empty);
     }
 
-    private static AmazonProductMetadataFailureKind ClassifyFetchFailure(AmazonProductFetchResult fetchResult)
-    {
-        if (ContainsBlockMarker(fetchResult.Content))
-        {
-            return AmazonProductMetadataFailureKind.Blocked;
-        }
-
-        return fetchResult.StatusCode switch
+    private static AmazonProductMetadataFailureKind ClassifyFetchFailure(AmazonProductFetchResult fetchResult) =>
+        fetchResult.StatusCode switch
         {
             HttpStatusCode.NotFound => AmazonProductMetadataFailureKind.NotFound,
             _ => AmazonProductMetadataFailureKind.NetworkError
         };
-    }
 
     private static bool ContainsBlockMarker(string content) =>
         content.Contains("captcha", StringComparison.OrdinalIgnoreCase) ||
         content.Contains("unusual traffic", StringComparison.OrdinalIgnoreCase) ||
+        content.Contains("automated access to Amazon data", StringComparison.OrdinalIgnoreCase) ||
         content.Contains("ロボットではありません", StringComparison.Ordinal);
+
+    private static bool LooksLikeProductPage(string content) =>
+        content.Contains("id=\"productTitle\"", StringComparison.OrdinalIgnoreCase) ||
+        content.Contains("id='productTitle'", StringComparison.OrdinalIgnoreCase) ||
+        content.Contains("id=\"dp\"", StringComparison.OrdinalIgnoreCase) ||
+        content.Contains("id='dp'", StringComparison.OrdinalIgnoreCase) ||
+        content.Contains("data-asin=", StringComparison.OrdinalIgnoreCase);
 
     private static TimeSpan GetFailureTtl(AmazonProductMetadataFailureKind? failureKind) =>
         failureKind switch
         {
             AmazonProductMetadataFailureKind.NotFound => NotFoundTtl,
             AmazonProductMetadataFailureKind.ParseMiss => ParseMissTtl,
-            _ => BlockedAndNetworkErrorTtl
+            _ => BlockedNetworkAndUnexpectedResponseTtl
         };
 
     private sealed record AmazonProductMetadataResolution(
