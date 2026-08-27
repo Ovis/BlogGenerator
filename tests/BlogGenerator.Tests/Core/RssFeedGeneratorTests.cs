@@ -28,7 +28,7 @@ public class RssFeedGeneratorTests
     }
 
     [Test]
-    public async Task ルート直下固定ページのフィードURLに二重スラッシュを含めない()
+    public async Task 固定ページと未公開記事はフィードから除外する()
     {
         var generator = new RssFeedGenerator(
             new SiteOption
@@ -45,6 +45,15 @@ public class RssFeedGeneratorTests
 
         await generator.GenerateRssAndAtomFeedsAsync(
             [
+                new Article(
+                    FileName: "article.html",
+                    Title: "Published article",
+                    Body: "<p>Published body</p>",
+                    Tags: ["normal"],
+                    Published: DateTimeOffset.Parse("2026-08-12T10:00:00+09:00"),
+                    RelativeDirectoryPath: "entry",
+                    RootRelativeDirectoryPath: "/blog/entry",
+                    IsFixedPage: false),
                 new Article(
                     FileName: "about.html",
                     Title: "About page",
@@ -71,11 +80,13 @@ public class RssFeedGeneratorTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(rssXml, Does.Contain("https://example.com/blog/about.html"));
-            Assert.That(rssXml, Does.Not.Contain("https://example.com/blog//about.html"));
+            Assert.That(rssXml, Does.Contain("Published article"));
+            Assert.That(rssXml, Does.Contain("https://example.com/blog/entry/article.html"));
+            Assert.That(rssXml, Does.Not.Contain("About page"));
             Assert.That(rssXml, Does.Not.Contain("Draft article"));
-            Assert.That(atomXml, Does.Contain("https://example.com/blog/about.html"));
-            Assert.That(atomXml, Does.Not.Contain("https://example.com/blog//about.html"));
+            Assert.That(atomXml, Does.Contain("Published article"));
+            Assert.That(atomXml, Does.Contain("https://example.com/blog/entry/article.html"));
+            Assert.That(atomXml, Does.Not.Contain("About page"));
             Assert.That(atomXml, Does.Not.Contain("Draft article"));
         });
     }
