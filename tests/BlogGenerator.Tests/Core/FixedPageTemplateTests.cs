@@ -22,7 +22,7 @@ public class FixedPageTemplateTests
         Directory.CreateDirectory(_theme);
         Directory.CreateDirectory(_output);
 
-        File.WriteAllText(Path.Combine(_theme, "Layout.cshtml"), "@using RazorLight\n@using BlogGenerator.Models\n@inherits TemplatePage<PageModel>\n<html><body>@{ await IncludeAsync(Model.ContentTemplate, Model); }</body></html>");
+        File.WriteAllText(Path.Combine(_theme, "Layout.cshtml"), "@using RazorLight\n@using BlogGenerator.Models\n@using BlogGenerator.Enums\n@inherits TemplatePage<PageModel>\n<html><body>@{ if (Model.PageType == PageType.Article) { await IncludeAsync(Model.ContentTemplate, Model); } else if (Model.PageType == PageType.PageList) { await IncludeAsync(\"PageList.cshtml\", Model); } else if (Model.PageType == PageType.Tag) { await IncludeAsync(\"Tag.cshtml\", Model); } }</body></html>");
         File.WriteAllText(Path.Combine(_theme, "Content.cshtml"), "@using RazorLight\n@using BlogGenerator.Models\n@inherits TemplatePage<PageModel>\n<article>ARTICLE:@Model.Articles.First().Title</article>");
         File.WriteAllText(Path.Combine(_theme, "Page.cshtml"), "@using RazorLight\n@using BlogGenerator.Models\n@inherits TemplatePage<PageModel>\n<article>PAGE:@Raw(Model.Articles.First().BodyHtml.Value)</article>");
         File.WriteAllText(Path.Combine(_theme, "Search.cshtml"), "@using RazorLight\n@using BlogGenerator.Models\n@inherits TemplatePage<PageModel>\n<article>SEARCH:@Raw(Model.Articles.First().BodyHtml.Value)</article>");
