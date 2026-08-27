@@ -16,6 +16,11 @@ public class PageGenerator : IPageGenerator
     private readonly IFileSystemHelper _fileSystemHelper;
     private readonly string _themePath;
 
+    public PageGenerator(RazorLightEngine razorLightEngine, SiteOption siteOption, IFileSystemHelper fileSystemHelper)
+        : this(razorLightEngine, siteOption, fileSystemHelper, new ThemeSettings(string.Empty))
+    {
+    }
+
     public PageGenerator(
         RazorLightEngine razorLightEngine,
         SiteOption siteOption,
@@ -235,6 +240,11 @@ public class PageGenerator : IPageGenerator
         {
             throw new InvalidOperationException(
                 $"Invalid fixed page template name '{configuredTemplate}'. Only letters, digits, '_' and '-' are allowed.");
+        }
+
+        if (string.IsNullOrEmpty(_themePath))
+        {
+            return $"{templateName}.cshtml";
         }
 
         var matches = Directory.GetFiles(_themePath, "*.cshtml", SearchOption.TopDirectoryOnly)
