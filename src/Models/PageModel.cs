@@ -12,16 +12,14 @@ namespace BlogGenerator.Models
 
         public PaginationModel Pagination { get; set; } = new();
 
+        public string ContentTemplate { get; set; } = string.Empty;
     }
 
     public class PaginationModel
     {
         public int CurrentPage { get; set; }
-        
         public int TotalPages { get; set; }
-
         public int MaxPagesToShow { get; set; }
-
         public string RelativeDirectoryPath { get; set; } = string.Empty;
     }
 }
