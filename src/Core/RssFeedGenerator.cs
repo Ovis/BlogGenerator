@@ -21,7 +21,7 @@ public class RssFeedGenerator(SiteOption siteOption, FeedOption feedOption, IFil
         {
             Language = feedOption.Language,
             Items = articles
-                .Where(article => !article.IsFixedPage)
+                .Where(article => !article.IsFixedPage && article.Published is { } published && published != DateTimeOffset.MinValue)
                 .Take(feedOption.MaxFeedItems)
                 .Select(article => new SyndicationItem(
                     title: article.Title,
