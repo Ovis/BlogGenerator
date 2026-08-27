@@ -13,13 +13,9 @@ public record Article(
     bool IsFixedPage,
     string Template = "")
 {
-    // 本文HTMLは Markdown 変換済みなので、テンプレート側でだけ明示的に生出力する
     public TrustedHtml BodyHtml => new(Body);
-
     public string ExcerptHtml => Body.SplitHtml().excerptHtml;
     public string RemainingHtml => Body.SplitHtml().remainingHtml;
-
-    // 抜粋HTMLも本文と同じく、通常文字列とは分けて扱う
     public TrustedHtml ExcerptHtmlContent => new(ExcerptHtml);
 
     public string Description
@@ -35,14 +31,12 @@ public record Article(
 
     internal PublicationState GetPublicationState(DateTimeOffset buildTime)
     {
-        if (Published is null)
+        if (Published is null || Published == DateTimeOffset.MinValue)
         {
             return PublicationState.Draft;
         }
 
-        return Published <= buildTime
-            ? PublicationState.Published
-            : PublicationState.Scheduled;
+        return Published <= buildTime ? PublicationState.Published : PublicationState.Scheduled;
     }
 }
 
@@ -54,13 +48,11 @@ public static class ArticleExtensions
         var excerptHtml = html;
         var remainingHtml = string.Empty;
         var moreIndex = html.IndexOf(moreTag, StringComparison.Ordinal);
-
         if (moreIndex >= 0)
         {
             excerptHtml = html[..moreIndex];
             remainingHtml = html[(moreIndex + moreTag.Length)..];
         }
-
         return (excerptHtml, remainingHtml);
     }
 }
