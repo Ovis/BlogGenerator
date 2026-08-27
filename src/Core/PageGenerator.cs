@@ -58,7 +58,7 @@ public class PageGenerator : IPageGenerator
     {
         var regularArticles = GetRegularArticles(articles).ToList();
         var tagCatalog = CreateTagCatalog(regularArticles);
-        foreach (var article in articles)
+        foreach (var article in articles.Where(IsRenderableContent))
         {
             var outputFilePath = Path.Combine(outputDir, article.RelativeDirectoryPath, article.FileName);
             _fileSystemHelper.EnsureDirectoryExists(Path.GetDirectoryName(outputFilePath)!);
@@ -168,5 +168,6 @@ public class PageGenerator : IPageGenerator
     }
 
     private static TagCatalog CreateTagCatalog(IEnumerable<Article> articles) => TagCatalog.Build(articles, message => Console.Error.WriteLine($"[tag warning] {message}"));
-    private static IEnumerable<Article> GetRegularArticles(IEnumerable<Article> articles) => articles.Where(article => !article.IsFixedPage);
+    private static IEnumerable<Article> GetRegularArticles(IEnumerable<Article> articles) => articles.Where(article => !article.IsFixedPage && IsRenderableContent(article));
+    private static bool IsRenderableContent(Article article) => article.Published is { } published && published != DateTimeOffset.MinValue;
 }
