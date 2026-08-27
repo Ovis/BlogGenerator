@@ -4,7 +4,9 @@ public class Frontmatter
 {
     public string Title { get; set; } = string.Empty;
 
-    public DateTimeOffset? Published { get; set; }
+    // Front Matter自体がない既存入力との互換性のため、DTOの初期値のみMinValueを維持する。
+    // Publishedキーを持つFront MatterはMarkdownProcessorで明示的にnull/日時へ正規化する。
+    public DateTimeOffset? Published { get; set; } = DateTimeOffset.MinValue;
 
     public List<string> Tags { get; set; } = [];
 
