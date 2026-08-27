@@ -10,7 +10,8 @@ public record Article(
     DateTimeOffset Published,
     string RelativeDirectoryPath,
     string RootRelativeDirectoryPath,
-    bool IsFixedPage)
+    bool IsFixedPage,
+    string Template = "")
 {
     // 本文HTMLは Markdown 変換済みなので、テンプレート側でだけ明示的に生出力する
     public TrustedHtml BodyHtml => new(Body);
@@ -35,11 +36,6 @@ public record Article(
 
 public static class ArticleExtensions
 {
-    /// <summary>
-    /// 分割した2つのHtmlを返す
-    /// </summary>
-    /// <param name="html"></param>
-    /// <returns></returns>
     public static (string excerptHtml, string remainingHtml) SplitHtml(this string html)
     {
         const string moreTag = "<!-- more -->";
@@ -55,5 +51,4 @@ public static class ArticleExtensions
 
         return (excerptHtml, remainingHtml);
     }
-
 }
