@@ -1,4 +1,4 @@
-﻿using static System.Text.RegularExpressions.Regex;
+using static System.Text.RegularExpressions.Regex;
 
 namespace BlogGenerator.Models;
 
@@ -7,7 +7,7 @@ public record Article(
     string Title,
     string Body,
     List<string> Tags,
-    DateTimeOffset Published,
+    DateTimeOffset? Published,
     string RelativeDirectoryPath,
     string RootRelativeDirectoryPath,
     bool IsFixedPage,
@@ -32,6 +32,18 @@ public record Article(
     }
 
     public string RootRelativePath => PageModelBase.CombineUrlPath(RootRelativeDirectoryPath, FileName);
+
+    internal PublicationState GetPublicationState(DateTimeOffset buildTime)
+    {
+        if (Published is null)
+        {
+            return PublicationState.Draft;
+        }
+
+        return Published <= buildTime
+            ? PublicationState.Published
+            : PublicationState.Scheduled;
+    }
 }
 
 public static class ArticleExtensions
