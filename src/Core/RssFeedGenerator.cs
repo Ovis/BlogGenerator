@@ -1,4 +1,4 @@
-﻿using System.ServiceModel.Syndication;
+using System.ServiceModel.Syndication;
 using System.Text;
 using System.Xml;
 using BlogGenerator.Core.Interfaces;
@@ -10,10 +10,7 @@ public class RssFeedGenerator(SiteOption siteOption, FeedOption feedOption, IFil
 {
     public async Task GenerateRssAndAtomFeedsAsync(List<Article> articles, string outputDir)
     {
-        if (feedOption is { UseRss2: false, UseAtom: false })
-        {
-            return;
-        }
+        if (feedOption is { UseRss2: false, UseAtom: false }) return;
 
         var rssFeed = new SyndicationFeed(
             title: siteOption.SiteName,
@@ -24,14 +21,14 @@ public class RssFeedGenerator(SiteOption siteOption, FeedOption feedOption, IFil
         {
             Language = feedOption.Language,
             Items = articles
-                .Where(article => article.Published != DateTimeOffset.MinValue && !article.IsFixedPage)
+                .Where(article => !article.IsFixedPage && article.Published is { } published && published != DateTimeOffset.MinValue)
                 .Take(feedOption.MaxFeedItems)
                 .Select(article => new SyndicationItem(
                     title: article.Title,
                     content: article.ExcerptHtml,
                     itemAlternateLink: new Uri(new Uri(siteOption.SiteUrl), article.RootRelativePath),
                     id: new Uri(new Uri(siteOption.SiteUrl), article.RootRelativePath).ToString(),
-                    lastUpdatedTime: article.Published))
+                    lastUpdatedTime: article.Published!.Value))
         };
 
         if (feedOption.UseRss2)

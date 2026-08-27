@@ -1,11 +1,9 @@
-﻿@using RazorLight
+@using RazorLight
 @using BlogGenerator.Models
 @inherits TemplatePage<PageModel>
 
-
 @{
     foreach(var article in Model.Articles){
-
         <article class="card mb-6">
             <header>
                 <div class="card-content pb-0">
@@ -16,21 +14,17 @@
                         <div class="column is-narrow pt-0">
                             <div class="columns is-mobile is-vcentered">
                                 <div class="column is-narrow pr-0 is-flex">
-                                    <span class="icon">
-                                        <i class="fas fa-calendar-alt"></i>
-                                    </span>
+                                    <span class="icon"><i class="fas fa-calendar-alt"></i></span>
                                 </div>
                                 <time class="column pl-0 is-narrow">
-                                    <span>@(article.Published.ToString("yyyy/MM/dd HH:mm"))</span>
+                                    <span>@(article.Published!.Value.ToString("yyyy/MM/dd HH:mm"))</span>
                                 </time>
                             </div>
                         </div>
                         <div class="column pt-0">
                             <div class="columns is-mobile is-vcentered">
                                 <div class="column is-narrow pr-0 is-flex">
-                                    <span class="icon">
-                                        <i class="fas fa-tags"></i>
-                                    </span>
+                                    <span class="icon"><i class="fas fa-tags"></i></span>
                                 </div>
                                 <ul class="column tags pl-0">
                                     @foreach (var tag in Model.GetArticleTags(article))
@@ -46,15 +40,10 @@
                 </div>
             </header>
             <div class="card-content pt-0">
-                <div class="content">
-                    @Raw(article.ExcerptHtmlContent.Value)
-                </div>
+                <div class="content">@Raw(article.ExcerptHtmlContent.Value)</div>
                 @if (!string.IsNullOrEmpty(article.RemainingHtml)){
                     <a class="button is-fullwidth is-link is-outlined" href="@(article.RootRelativePath)">
-                        <span>続きを読む</span>
-                        <span class="icon">
-                            <i class="fas fa-chevron-right"></i>
-                        </span>
+                        <span>続きを読む</span><span class="icon"><i class="fas fa-chevron-right"></i></span>
                     </a>
                 }
             </div>
@@ -62,4 +51,3 @@
     }
     await IncludeAsync("_pagination.cshtml", Model);
 }
-
