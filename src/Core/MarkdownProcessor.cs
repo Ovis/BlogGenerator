@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Globalization;
 using BlogGenerator.Core.Interfaces;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
@@ -7,8 +6,6 @@ using Markdig;
 using Markdig.Extensions.Yaml;
 using Markdig.Renderers;
 using Markdig.Syntax;
-using YamlDotNet.RepresentationModel;
-using YamlDotNet.Serialization;
 
 namespace BlogGenerator.Core;
 
@@ -16,7 +13,7 @@ public class MarkdownProcessor : IMarkdownProcessor
 {
     private readonly SiteOption _siteOption;
     private readonly string _oEmbedDir;
-    private readonly TimeZoneInfo _timeZone;
+    private readonly FrontMatterParser _frontMatterParser;
     private readonly OEmbedCardParser _oEmbedParser;
     private readonly SemaphoreSlim _initializationSemaphore = new(1, 1);
     private readonly SemaphoreSlim _oEmbedProviderSemaphore = new(1, 1);
@@ -37,7 +34,7 @@ public class MarkdownProcessor : IMarkdownProcessor
     {
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
-        _timeZone = timeZone;
+        _frontMatterParser = new FrontMatterParser(timeZone);
         _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
         _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
         _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? LoadDefaultProviderCatalogAsync;
@@ -76,13 +73,7 @@ public class MarkdownProcessor : IMarkdownProcessor
         _contentPipeline!.Setup(renderer);
         var document = Markdown.Parse(markdown, _frontMatterPipeline);
         var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
-        var frontMatter = new Frontmatter();
-        if (yamlBlock != null)
-        {
-            var yaml = yamlBlock.Lines.ToString();
-            frontMatter = new DeserializerBuilder().IgnoreUnmatchedProperties().Build().Deserialize<Frontmatter>(yaml);
-            frontMatter.Published = ParsePublished(yaml, path);
-        }
+        var frontMatter = yamlBlock is null ? new Frontmatter() : _frontMatterParser.Parse(yamlBlock.Lines.ToString(), path);
 
         var markdownContent = yamlBlock == null ? markdown : markdown[(yamlBlock.Span.End + 1)..].TrimStart();
         var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline!);
@@ -110,32 +101,6 @@ public class MarkdownProcessor : IMarkdownProcessor
         return (writer.ToString(), frontMatter);
     }
 
-    private DateTimeOffset? ParsePublished(string yaml, string path)
-    {
-        var stream = new YamlStream();
-        try { stream.Load(new StringReader(yaml)); }
-        catch (Exception ex) { throw PublishedError(path, null, "Front Matter YAML could not be parsed.", ex); }
-        if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode mapping) return null;
-
-        var matches = mapping.Children.Where(x => x.Key is YamlScalarNode key && string.Equals(key.Value, "Published", StringComparison.Ordinal)).ToArray();
-        if (matches.Length == 0) return null;
-        if (matches.Length > 1) throw PublishedError(path, null, "Published is defined more than once.");
-        if (matches[0].Value is not YamlScalarNode scalar) throw PublishedError(path, null, "Published must be a scalar value.");
-        var value = scalar.Value?.Trim();
-        if (string.IsNullOrEmpty(value)) throw PublishedError(path, value, "Published must contain a valid date and time.");
-
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var withOffset) && HasExplicitOffset(value)) return withOffset;
-        if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var local)) throw PublishedError(path, value, "Published could not be parsed as a date and time.");
-        local = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
-        if (_timeZone.IsInvalidTime(local)) throw PublishedError(path, value, $"The local time does not exist in time zone '{_timeZone.Id}'.");
-        if (_timeZone.IsAmbiguousTime(local)) throw PublishedError(path, value, $"The local time is ambiguous in time zone '{_timeZone.Id}'. Specify an explicit UTC offset.");
-        return new DateTimeOffset(local, _timeZone.GetUtcOffset(local));
-    }
-
-    private InvalidDataException PublishedError(string path, string? value, string reason, Exception? inner = null) =>
-        new($"Invalid Published value in '{path}': '{value ?? "<null>"}'. Time zone: '{_timeZone.Id}'. Reason: {reason}", inner);
-
-    private static bool HasExplicitOffset(string value) => value.EndsWith("Z", StringComparison.OrdinalIgnoreCase) || System.Text.RegularExpressions.Regex.IsMatch(value, @"[+-]\d{2}:?\d{2}$");
     private static bool IsExternalUrl(string url) => url.StartsWith("/", StringComparison.Ordinal) || url.StartsWith("//", StringComparison.Ordinal) || Uri.TryCreate(url, UriKind.Absolute, out _);
 
     private async Task EnsureInitializedAsync()
