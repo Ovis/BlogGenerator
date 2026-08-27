@@ -1,0 +1,18 @@
+@using RazorLight
+@using BlogGenerator.Models
+@inherits TemplatePage<PageModel>
+@{
+    var page = Model.Articles.First();
+}
+
+<article class="card mb-6">
+    <div class="card-content">
+        @if (!string.IsNullOrEmpty(page.Title))
+        {
+            <h1 class="title mb-5">@page.Title</h1>
+        }
+        <div class="content">
+            @Raw(page.BodyHtml.Value)
+        </div>
+    </div>
+</article>

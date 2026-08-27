@@ -76,8 +76,6 @@ public class MarkdownProcessor : IMarkdownProcessor
         relativePathExcludeFileName = relativePathExcludeFileName == "." ? string.Empty : relativePathExcludeFileName;
 
         var routeRelativePath = PageModelBase.CombineUrlPath(baseAbsolutePath, relativePathExcludeFileName);
-
-        // Markdownファイルの内容を読み込む
         var (html, frontMatter) = await ParseMarkdownWithFrontmatterAsync(filePath, routeRelativePath);
 
         return new Article(
@@ -88,7 +86,8 @@ public class MarkdownProcessor : IMarkdownProcessor
             Published: frontMatter.Published,
             RelativeDirectoryPath: relativePathExcludeFileName,
             RootRelativeDirectoryPath: routeRelativePath,
-            IsFixedPage: frontMatter.IsFixedPage
+            IsFixedPage: frontMatter.IsFixedPage,
+            Template: frontMatter.Template ?? string.Empty
         );
     }
 
@@ -129,16 +128,11 @@ public class MarkdownProcessor : IMarkdownProcessor
                 _amazonProductMetadataResolver);
         }
 
-        // 画像パスを置換
         foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
         {
-            if (link.IsImage)
+            if (link.IsImage && !IsExternalUrl(link.Url!))
             {
-                if (!IsExternalUrl(link.Url!))
-                {
-                    // SiteOptionのBaseUrlを使って、画像の相対パスを絶対パスに変換
-                    link.Url = PageModelBase.CombineUrlPath(basePath, link.Url!);
-                }
+                link.Url = PageModelBase.CombineUrlPath(basePath, link.Url!);
             }
         }
 
@@ -158,8 +152,6 @@ public class MarkdownProcessor : IMarkdownProcessor
             {
                 var canonicalUrl = amazonInline.OEmbedFallbackUrl!;
                 var fallbackHtml = await _oEmbedResolver.GetOEmbedHtmlAsync(canonicalUrl);
-
-                // OGP/oEmbedカードが取得できた場合はそのHTMLを保持し、通常リンクまで落ちた時だけhrefへアソシエイトタグを付ける
                 amazonInline.HtmlContent = fallbackHtml == OEmbedHtmlFactory.CreateStandardLink(canonicalUrl) &&
                     !string.IsNullOrEmpty(amazonInline.FallbackLinkUrl)
                     ? OEmbedHtmlFactory.CreateStandardLink(amazonInline.FallbackLinkUrl, canonicalUrl)
@@ -171,9 +163,7 @@ public class MarkdownProcessor : IMarkdownProcessor
         renderer.Render(markdownDocument);
         writer.Flush();
 
-        var html = writer.ToString();
-
-        return (html, frontMatter);
+        return (writer.ToString(), frontMatter);
     }
 
     private static bool IsExternalUrl(string url)
@@ -223,6 +213,13 @@ public class MarkdownProcessor : IMarkdownProcessor
         }
     }
 
+    private static HttpClient CreateOEmbedHttpClient()
+    {
+        var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator");
+        return httpClient;
+    }
+
     private static OEmbedResolver CreateDefaultResolver()
     {
         var httpClient = CreateOEmbedHttpClient();
@@ -252,16 +249,6 @@ public class MarkdownProcessor : IMarkdownProcessor
         {
             _oEmbedProviderSemaphore.Release();
         }
-    }
-
-    private static HttpClient CreateOEmbedHttpClient()
-    {
-        var httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(15)
-        };
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator");
-        return httpClient;
     }
 
     private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync()

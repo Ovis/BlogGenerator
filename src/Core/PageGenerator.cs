@@ -1,27 +1,41 @@
-﻿using BlogGenerator.Core.Interfaces;
+﻿using System.Text;
+using System.Text.RegularExpressions;
+using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Enums;
 using BlogGenerator.Models;
 using RazorLight;
-using System.Text;
 
 namespace BlogGenerator.Core;
 
 public class PageGenerator : IPageGenerator
 {
+    private static readonly Regex TemplateNamePattern = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
+
     private readonly RazorLightEngine _razorLightEngine;
     private readonly SiteOption _siteOption;
     private readonly IFileSystemHelper _fileSystemHelper;
+    private readonly string _themePath;
 
     public PageGenerator(RazorLightEngine razorLightEngine, SiteOption siteOption, IFileSystemHelper fileSystemHelper)
+        : this(razorLightEngine, siteOption, fileSystemHelper, new ThemeSettings(string.Empty))
+    {
+    }
+
+    public PageGenerator(
+        RazorLightEngine razorLightEngine,
+        SiteOption siteOption,
+        IFileSystemHelper fileSystemHelper,
+        ThemeSettings themeSettings)
     {
         _razorLightEngine = razorLightEngine;
         _siteOption = siteOption;
         _fileSystemHelper = fileSystemHelper;
+        _themePath = themeSettings.ThemePath;
     }
 
     public async Task<TrustedHtml> GenerateSideBarHtmlAsync(List<Article> articles)
     {
-        var publishedArticles = GetPublishedArticles(articles).ToList();
+        var publishedArticles = GetPublishedRegularArticles(articles).ToList();
         var tagCatalog = CreateTagCatalog(publishedArticles);
 
         var html = await _razorLightEngine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
@@ -36,13 +50,14 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateArticlePagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
-        var publishedArticles = GetPublishedArticles(articles).ToList();
-        var tagCatalog = CreateTagCatalog(publishedArticles);
+        var publishedPages = GetPublishedArticles(articles).ToList();
+        var publishedRegularArticles = publishedPages.Where(article => !article.IsFixedPage).ToList();
+        var tagCatalog = CreateTagCatalog(publishedRegularArticles);
 
-        foreach (var article in publishedArticles)
+        foreach (var article in publishedPages)
         {
-            var outputFilePathWithoutExtension = Path.Combine(outputDir, article.RelativeDirectoryPath, article.FileName);
-            var outputDirPath = Path.GetDirectoryName(outputFilePathWithoutExtension);
+            var outputFilePath = Path.Combine(outputDir, article.RelativeDirectoryPath, article.FileName);
+            var outputDirPath = Path.GetDirectoryName(outputFilePath);
             _fileSystemHelper.EnsureDirectoryExists(outputDirPath!);
 
             var model = new PageModel
@@ -51,17 +66,20 @@ public class PageGenerator : IPageGenerator
                 PageType = PageType.Article,
                 SideBarHtml = sideBarHtml,
                 Articles = [article],
-                TagCatalog = tagCatalog
+                TagCatalog = tagCatalog,
+                ContentTemplate = article.IsFixedPage
+                    ? ResolveFixedPageTemplate(article.Template)
+                    : "Content.cshtml"
             };
 
             var result = await RenderLayoutTemplateAsync(model);
-            await File.WriteAllTextAsync(outputFilePathWithoutExtension, result, Encoding.UTF8);
+            await File.WriteAllTextAsync(outputFilePath, result, Encoding.UTF8);
         }
     }
 
     public async Task GenerateIndexPagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
-        var publishedArticles = GetPublishedArticles(articles).ToList();
+        var publishedArticles = GetPublishedRegularArticles(articles).ToList();
         var tagCatalog = CreateTagCatalog(publishedArticles);
         var pagedArticles = publishedArticles
             .Select((article, index) => new { article, index })
@@ -100,7 +118,7 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateTagPagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
-        var publishedArticles = GetPublishedArticles(articles).ToArray();
+        var publishedArticles = GetPublishedRegularArticles(articles).ToArray();
         var tagCatalog = CreateTagCatalog(publishedArticles);
 
         var outputFilePath = _fileSystemHelper.CombineFilePath(outputDir, Path.Combine("tags", "index.html"));
@@ -163,7 +181,7 @@ public class PageGenerator : IPageGenerator
 
     public async Task GenerateArchivePagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
     {
-        var publishedArticles = GetPublishedArticles(articles).ToList();
+        var publishedArticles = GetPublishedRegularArticles(articles).ToList();
         var tagCatalog = CreateTagCatalog(publishedArticles);
         var yearMonthArticles = publishedArticles.GroupBy(x => x.Published.ToString("yyyy/MM"))
             .Select(group => new
@@ -214,6 +232,42 @@ public class PageGenerator : IPageGenerator
         }
     }
 
+    private string ResolveFixedPageTemplate(string configuredTemplate)
+    {
+        var templateName = string.IsNullOrWhiteSpace(configuredTemplate) ? "Page" : configuredTemplate.Trim();
+
+        if (!TemplateNamePattern.IsMatch(templateName))
+        {
+            throw new InvalidOperationException(
+                $"Invalid fixed page template name '{configuredTemplate}'. Only letters, digits, '_' and '-' are allowed.");
+        }
+
+        if (string.IsNullOrEmpty(_themePath))
+        {
+            return $"{templateName}.cshtml";
+        }
+
+        var matches = Directory.GetFiles(_themePath, "*.cshtml", SearchOption.TopDirectoryOnly)
+            .Where(path => string.Equals(
+                Path.GetFileNameWithoutExtension(path),
+                templateName,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (matches.Length == 0)
+        {
+            throw new InvalidOperationException($"Fixed page template '{templateName}.cshtml' was not found in theme '{_themePath}'.");
+        }
+
+        if (matches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Fixed page template '{templateName}' is ambiguous. Matching files: {string.Join(", ", matches.Select(Path.GetFileName))}.");
+        }
+
+        return Path.GetFileName(matches[0]);
+    }
+
     private async Task<string> RenderLayoutTemplateAsync(PageModel model)
     {
         var cacheResult = _razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
@@ -228,4 +282,7 @@ public class PageGenerator : IPageGenerator
 
     private static IEnumerable<Article> GetPublishedArticles(IEnumerable<Article> articles) =>
         articles.Where(article => article.Published != DateTimeOffset.MinValue);
+
+    private static IEnumerable<Article> GetPublishedRegularArticles(IEnumerable<Article> articles) =>
+        GetPublishedArticles(articles).Where(article => !article.IsFixedPage);
 }

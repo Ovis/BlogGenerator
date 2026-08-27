@@ -11,4 +11,6 @@ public class Frontmatter
     public string Eyecatch { get; set; } = string.Empty;
 
     public bool IsFixedPage { get; set; } = false;
+
+    public string Template { get; set; } = string.Empty;
 }
