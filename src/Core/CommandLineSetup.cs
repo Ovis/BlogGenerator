@@ -37,6 +37,11 @@ public class CommandLineSetup
         rootCommand.Add(AmazonCacheOption);
         rootCommand.Add(ConfigOption);
         rootCommand.Add(ScheduledCommand);
+
+        // System.CommandLine treats a command that only has subcommands and no action as
+        // requiring one of those subcommands. BlogGenerator historically executes directly
+        // from the root command, so keep the root executable. Program replaces this action.
+        rootCommand.SetAction(_ => 0);
         return rootCommand;
     }
 }

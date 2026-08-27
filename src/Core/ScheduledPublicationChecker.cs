@@ -1,14 +1,10 @@
 using BlogGenerator.Models;
-using Markdig;
-using Markdig.Extensions.Yaml;
-using Markdig.Syntax;
 
 namespace BlogGenerator.Core;
 
 internal sealed class ScheduledPublicationChecker(TimeZoneInfo timeZone)
 {
     private readonly FrontMatterParser _frontMatterParser = new(timeZone);
-    private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder().UseYamlFrontMatter().Build();
 
     public ScheduledPublicationCheckResult Check(string inputDirectory, DateTimeOffset after, DateTimeOffset until)
     {
@@ -26,13 +22,11 @@ internal sealed class ScheduledPublicationChecker(TimeZoneInfo timeZone)
             try
             {
                 var markdown = File.ReadAllText(file);
-                var document = Markdown.Parse(markdown, _frontMatterPipeline);
-                var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
-                if (yamlBlock is null) continue;
+                if (!TryExtractFrontMatter(markdown, out var yaml)) continue;
 
-                var frontMatter = _frontMatterParser.Parse(yamlBlock.Lines.ToString(), relativePath);
-                if (frontMatter.Published is { } published && after < published && published <= until)
-                    items.Add(new ScheduledPublicationItem(relativePath, published));
+                var published = _frontMatterParser.ParsePublished(yaml, relativePath);
+                if (published is { } value && after < value && value <= until)
+                    items.Add(new ScheduledPublicationItem(relativePath, value));
             }
             catch (Exception ex)
             {
@@ -48,5 +42,23 @@ internal sealed class ScheduledPublicationChecker(TimeZoneInfo timeZone)
             .ThenBy(x => x.Path, StringComparer.Ordinal)
             .ToArray();
         return new ScheduledPublicationCheckResult(after, until, timeZone, orderedItems);
+    }
+
+    private static bool TryExtractFrontMatter(string markdown, out string yaml)
+    {
+        yaml = string.Empty;
+        if (string.IsNullOrEmpty(markdown)) return false;
+
+        var normalized = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
+        if (!normalized.StartsWith("---\n", StringComparison.Ordinal)) return false;
+
+        var end = normalized.IndexOf("\n---", 4, StringComparison.Ordinal);
+        if (end < 0) return false;
+
+        var afterDelimiter = end + 4;
+        if (afterDelimiter < normalized.Length && normalized[afterDelimiter] != '\n') return false;
+
+        yaml = normalized[4..end];
+        return true;
     }
 }
