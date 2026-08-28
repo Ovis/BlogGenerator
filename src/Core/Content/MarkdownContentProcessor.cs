@@ -1,3 +1,4 @@
+using BlogGenerator.Core;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
