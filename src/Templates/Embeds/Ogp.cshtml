@@ -1,0 +1,23 @@
+@model BlogGenerator.MarkdigExtension.OgpCardModel
+<div class="bcard-wrapper">
+    <a class="ogp-card" href="@Model.Url" target="_blank" rel="nofollow noopener noreferrer">
+        <span class="ogp-card-content">
+            <span class="ogp-card-site">
+                <img class="ogp-card-favicon" src="@Model.FaviconUrl" alt="" loading="lazy" />
+                <span>@Model.SiteName</span>
+            </span>
+            <span class="ogp-card-title">@Model.Title</span>
+            @if (!string.IsNullOrWhiteSpace(Model.Description))
+            {
+                <span class="ogp-card-description">@Model.Description</span>
+            }
+            <span class="ogp-card-url">@Model.DisplayUrl</span>
+        </span>
+        @if (!string.IsNullOrWhiteSpace(Model.ImageUrl))
+        {
+            <span class="ogp-card-image-wrapper">
+                <img class="ogp-card-image" src="@Model.ImageUrl" alt="" loading="lazy" />
+            </span>
+        }
+    </a>
+</div>

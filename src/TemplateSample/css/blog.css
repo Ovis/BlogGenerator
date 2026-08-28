@@ -59,98 +59,115 @@ img {
 	}
 }
 
-.bcard-wrapper {
-	display: block;
+/* OGP fallback card */
+.ogp-card {
+	display: flex;
 	width: 100%;
-	max-width: 500px;
-	margin: 10px 0px;
-	border-radius: 3px;
-	padding: 12px;
-	border: 1px solid #e0e0e0;
-}
-
-.bcard-site, .bcard-url {
-	font-size: 12px;
-	line-height: 1.3;
+	max-width: 680px;
+	min-width: 0;
 	overflow: hidden;
-	max-height: 15px;
-	display: -webkit-box;
-	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 1;
+	border: 1px solid #d9dde3;
+	border-radius: 8px;
+	background: #fff;
+	color: #212529;
+	text-decoration: none;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-.bcard-header {
-	position: relative;
-	height: 30px;
-	margin-bottom: 5px;
-	display: block;
+.ogp-card:focus,
+.ogp-card:hover {
+	color: #212529;
+	border-color: #b9c2cc;
+	text-decoration: none;
+	box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
 }
 
-.withgfav {
-	padding-left: 23px;
+.ogp-card-content {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	flex-direction: column;
+	justify-content: center;
+	gap: 0.35rem;
+	padding: 0.9rem 1rem;
 }
 
-.bcard-favicon {
-	position: absolute;
-	top: 0px;
-	left: 0px;
+.ogp-card-site {
+	display: flex;
+	min-width: 0;
+	align-items: center;
+	gap: 0.4rem;
+	font-size: 0.78rem;
+	line-height: 1.2;
+	color: #5f6368;
+}
+
+.ogp-card-favicon {
+	flex: 0 0 16px;
 	width: 16px;
 	height: 16px;
+	max-width: none;
+	border-radius: 2px;
 }
 
-.bcard-main {
-	overflow: hidden;
-	position: relative;
-	display: block;
-}
-
-.withogimg {
-	padding-right: 110px;
-	height: 100px;
-}
-
-.bcard-img {
-	width: 100px;
-	height: 100px;
-	position: absolute;
-	top: 0;
-	right: 0;
-	background-size: cover;
-	background-position: center center;
-}
-
-.bcard-title {
-	font-size: 17px;
-	margin: 0 0 2px;
-	line-height: 1.4;
-	max-height: 47px;
-	overflow: hidden;
+.ogp-card-title {
 	display: -webkit-box;
+	overflow: hidden;
 	-webkit-box-orient: vertical;
 	-webkit-line-clamp: 2;
-	font-weight: bold;
+	font-size: 1rem;
+	font-weight: 700;
+	line-height: 1.4;
 }
 
-.bcard-description {
-	line-height: 1.5;
-	font-size: 12px;
-	max-height: 72px;
-	overflow: hidden;
+.ogp-card-description {
 	display: -webkit-box;
+	overflow: hidden;
 	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 3;
+	-webkit-line-clamp: 2;
+	font-size: 0.85rem;
+	line-height: 1.45;
+	color: #5f6368;
 }
 
-.bcard-title a {
-	color: #424242;
+.ogp-card-url {
+	overflow: hidden;
+	font-size: 0.75rem;
+	line-height: 1.25;
+	color: #8a9097;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
-.bcard-url a {
-	color: #9e9e9e;
+.ogp-card-image-wrapper {
+	flex: 0 0 180px;
+	width: 180px;
+	min-height: 126px;
+	background: #f5f6f7;
 }
 
-.bcard-title a:hover, .bcard-url a:hover, .bcard-site a:hover {
-	text-decoration: underline;
+.ogp-card-image {
+	display: block;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	object-fit: cover;
+}
+
+@media screen and (max-width: 640px) {
+	.ogp-card-image-wrapper {
+		flex-basis: 120px;
+		width: 120px;
+		min-height: 112px;
+	}
+
+	.ogp-card-content {
+		padding: 0.75rem;
+	}
+
+	.ogp-card-description {
+		display: none;
+	}
 }
 
 /* Amazon card */

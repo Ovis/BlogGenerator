@@ -31,6 +31,7 @@
 
 	<ItemGroup>
 		<EmbeddedResource Include="Templates\Embeds\Amazon.cshtml" />
+		<EmbeddedResource Include="Templates\Embeds\Ogp.cshtml" />
 		<None Update="appsettings.Development.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>

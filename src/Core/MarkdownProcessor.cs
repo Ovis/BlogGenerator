@@ -39,7 +39,8 @@ public class MarkdownProcessor : IMarkdownProcessor
         Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null,
         IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null,
         AmazonProductMetadataResolver? amazonProductMetadataResolver = null,
-        AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
+        AmazonProductMetadataCacheSettings? amazonCacheSettings = null,
+        IOgpCardTemplateRenderer? ogpCardTemplateRenderer = null)
         : this(
             siteOption,
             oEmbedDir,
@@ -49,7 +50,8 @@ public class MarkdownProcessor : IMarkdownProcessor
             oEmbedProviderCatalogLoader,
             amazonCardTemplateRenderer,
             amazonProductMetadataResolver,
-            amazonCacheSettings)
+            amazonCacheSettings,
+            ogpCardTemplateRenderer)
     {
     }
 
@@ -65,12 +67,13 @@ public class MarkdownProcessor : IMarkdownProcessor
         Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null,
         IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null,
         AmazonProductMetadataResolver? amazonProductMetadataResolver = null,
-        AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
+        AmazonProductMetadataCacheSettings? amazonCacheSettings = null,
+        IOgpCardTemplateRenderer? ogpCardTemplateRenderer = null)
     {
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
         _frontMatterParser = new FrontMatterParser(timeZone);
-        _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver(_oEmbedRequestMetrics);
+        _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver(_oEmbedRequestMetrics, ogpCardTemplateRenderer);
         _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
         _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? (() => LoadDefaultProviderCatalogAsync(_oEmbedRequestMetrics));
         _amazonCardTemplateRenderer = amazonCardTemplateRenderer;
@@ -231,10 +234,15 @@ public class MarkdownProcessor : IMarkdownProcessor
     /// <summary>
     /// provider一覧を空の状態で開始する既定oEmbed resolverを生成する
     /// </summary>
-    private static OEmbedResolver CreateDefaultResolver(ExternalRequestMetrics requestMetrics)
+    private static OEmbedResolver CreateDefaultResolver(
+        ExternalRequestMetrics requestMetrics,
+        IOgpCardTemplateRenderer? ogpCardTemplateRenderer)
     {
         var fetcher = new OEmbedHttpFetcher(CreateOEmbedHttpClient(), requestMetrics);
-        return new OEmbedResolver(new OEmbedProviderCatalog([]), fetcher);
+        return new OEmbedResolver(
+            new OEmbedProviderCatalog([]),
+            fetcher,
+            ogpCardTemplateRenderer: ogpCardTemplateRenderer);
     }
 
     /// <summary>

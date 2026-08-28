@@ -146,7 +146,7 @@ Blog/
 - `BLOGGEN_FEED_USEATOM` - Atomフィードを生成するかどうか（true/false デフォルト: true）
 - `BLOGGEN_FEED_RSSFILENAME` - RSSフィードのファイル名（デフォルト: feed.rss）
 - `BLOGGEN_FEED_ATOMFILENAME` - Atomフィードのファイル名（デフォルト: feed.atom）
-- `BLOGGEN_FEED_MAXITEMS` - フィードに含める記事の最大数（デフォルト: 10）
+- `BLOGGEN_FEED_MAXITEMS` - フィードに含まれる記事の最大数（デフォルト: 10）
 - `BLOGGEN_FEED_LANGUAGE` - フィードの言語（デフォルト: ja-JP）
 
 ### Frontmatter
@@ -187,6 +187,8 @@ oEmbedに対応したサイトのコンテンツを埋め込むことができ�
 
 `--oembed` のオプションでキャッシュファイルを指定することで、oEmbedのキャッシュを保存できます。これにより、次回以降同じURLをキャッシュのデータで処理して生成時間を短縮できます。  
 キャッシュファイルはJSON形式で保存されます。
+
+一般URLでoEmbed providerやdiscovery endpointが見つからずOGP情報を使用する場合、表示はテーマの `.embeds/ogp.cshtml` で上書きできます。未配置時はアプリ同梱の既定テンプレートを使用します。OGP fallbackは表示モデルをキャッシュしてビルド時にテンプレートを再適用するため、テーマ変更のためにoEmbedキャッシュを削除する必要はありません。
 
 ### Amazon商品カード
 
