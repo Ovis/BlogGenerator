@@ -13,6 +13,8 @@ public class OEmbedResolver
     private readonly OEmbedEndpointResolver _oEmbedEndpointResolver;
     private readonly OEmbedSiteMetaDataExtractor _oEmbedSiteMetaDataExtractor;
     private readonly Func<DateTimeOffset> _utcNowProvider;
+    private long _cacheHits;
+    private long _cacheMisses;
 
     public OEmbedResolver(
         OEmbedProviderCatalog oEmbedProviderCatalog,
@@ -57,6 +59,12 @@ public class OEmbedResolver
 
     public ConcurrentDictionary<string, OEmbedCacheEntry> OEmbedCache { get; }
 
+    /// <summary>
+    /// 現在までのキャッシュhit/miss件数を取得する
+    /// </summary>
+    internal (long CacheHits, long CacheMisses) GetCacheMetrics() =>
+        (Interlocked.Read(ref _cacheHits), Interlocked.Read(ref _cacheMisses));
+
     public void SetProviderCatalog(OEmbedProviderCatalog oEmbedProviderCatalog)
     {
         _oEmbedProviderCatalog = oEmbedProviderCatalog;
@@ -73,10 +81,13 @@ public class OEmbedResolver
         {
             if (cachedResult.IsFresh(now) || cachedResult.ShouldSkipRetry(now))
             {
+                Interlocked.Increment(ref _cacheHits);
                 return cachedResult.HtmlContent;
             }
         }
 
+        // 期限切れエントリも再取得が必要なためmissとして扱う
+        Interlocked.Increment(ref _cacheMisses);
         var resolution = await ResolveOEmbedAsync(url);
         if (resolution.IsSuccess)
         {
