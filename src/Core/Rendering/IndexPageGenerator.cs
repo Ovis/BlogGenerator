@@ -14,18 +14,13 @@ internal sealed class IndexPageGenerator(
     /// <summary>
     /// 公開済み通常記事からページネーション付きのトップページを生成する
     /// </summary>
-    public async Task GenerateAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
-    {
-        var regularArticles = PageGenerationContent.GetRegularArticles(articles).ToList();
-        var tagCatalog = PageGenerationContent.CreateTagCatalog(regularArticles);
-
-        await renderingService.GeneratePagedArticleListPagesAsync(
-            regularArticles,
+    public Task GenerateAsync(PageGenerationContext context, string outputDir, TrustedHtml sideBarHtml) =>
+        renderingService.GeneratePagedArticleListPagesAsync(
+            context.RegularArticles,
             sideBarHtml,
-            tagCatalog,
+            context.TagCatalog,
             PageModelBase.CombineUrlPath(siteOption.BaseAbsolutePath),
             pageNumber => pageNumber == 1
                 ? fileSystemHelper.CombineFilePath(outputDir, "index.html")
                 : fileSystemHelper.CombineFilePath(outputDir, $"{pageNumber}.html"));
-    }
 }
