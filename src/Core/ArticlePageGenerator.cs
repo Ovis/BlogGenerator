@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using BlogGenerator.Enums;
 using BlogGenerator.Models;
 
 namespace BlogGenerator.Core;
@@ -54,7 +55,7 @@ internal sealed class ArticlePageGenerator(
     private PageModel CreateArticlePageModel(Article article, TrustedHtml sideBarHtml, TagCatalog tagCatalog) => new()
     {
         SiteOption = siteOption,
-        PageType = Enums.PageType.Article,
+        PageType = PageType.Article,
         SideBarHtml = sideBarHtml,
         Articles = [article],
         TagCatalog = tagCatalog,
