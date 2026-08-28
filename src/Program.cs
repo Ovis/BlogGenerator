@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using BlogGenerator.Core;
+using BlogGenerator.Models;
 
 namespace BlogGenerator;
 
