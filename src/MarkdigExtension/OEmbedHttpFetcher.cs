@@ -27,15 +27,7 @@ public class OEmbedHttpFetcher
     /// <summary>
     /// oEmbed関連のHTTP取得を共通化する
     /// </summary>
-    public Task<OEmbedFetchResult> FetchAsync(string url) =>
-        _requestMetrics is null
-            ? FetchCoreAsync(url)
-            : _requestMetrics.MeasureAsync(() => FetchCoreAsync(url));
-
-    /// <summary>
-    /// HTTP取得本体を実行する
-    /// </summary>
-    private async Task<OEmbedFetchResult> FetchCoreAsync(string url)
+    public async Task<OEmbedFetchResult> FetchAsync(string url)
     {
         try
         {
@@ -67,7 +59,7 @@ public class OEmbedHttpFetcher
 
     private async Task<HttpResponseMessage> SendAsyncFollowingRedirectAsync(string url)
     {
-        var response = await _httpClient.GetAsync(url);
+        var response = await GetAsyncMeasured(url);
 
         // 既存実装互換のため、明示的に1回だけリダイレクト先を追従する
         if (response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.MovedPermanently)
@@ -76,12 +68,20 @@ public class OEmbedHttpFetcher
             if (!string.IsNullOrEmpty(redirectUrl))
             {
                 response.Dispose();
-                return await _httpClient.GetAsync(redirectUrl);
+                return await GetAsyncMeasured(redirectUrl);
             }
         }
 
         return response;
     }
+
+    /// <summary>
+    /// 実際のHTTP GET 1回を実行し、計測が有効な場合は件数と所要時間を記録する
+    /// </summary>
+    private Task<HttpResponseMessage> GetAsyncMeasured(string url) =>
+        _requestMetrics is null
+            ? _httpClient.GetAsync(url)
+            : _requestMetrics.MeasureAsync(() => _httpClient.GetAsync(url));
 
     private static string ResolveUrl(string baseUrl, string? candidate)
     {
