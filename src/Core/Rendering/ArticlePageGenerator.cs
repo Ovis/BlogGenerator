@@ -16,6 +16,8 @@ internal sealed class ArticlePageGenerator(
     PageRenderingService renderingService)
 {
     private static readonly Regex TemplateNamePattern = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
+    private readonly Lazy<IReadOnlyDictionary<string, string[]>> _fixedPageTemplates =
+        new(() => BuildFixedPageTemplateIndex(themeSettings.ThemePath));
 
     /// <summary>
     /// 指定された記事を実際には書き出さずにレンダリングし、公開時に生成可能か検証する
@@ -36,18 +38,22 @@ internal sealed class ArticlePageGenerator(
     /// <summary>
     /// 公開対象の記事と固定ページの個別HTMLファイルを生成する
     /// </summary>
-    public async Task GenerateAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
+    public async Task GenerateAsync(PageGenerationContext context, string outputDir, TrustedHtml sideBarHtml)
     {
-        var regularArticles = PageGenerationContent.GetRegularArticles(articles).ToList();
-        var tagCatalog = PageGenerationContent.CreateTagCatalog(regularArticles);
+        var renderableArticles = context.Articles.Where(PageGenerationContent.IsRenderableContent);
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = BuildConcurrency.RenderingDegreeOfParallelism
+        };
 
-        foreach (var article in articles.Where(PageGenerationContent.IsRenderableContent))
+        await Parallel.ForEachAsync(renderableArticles, parallelOptions, async (article, _) =>
         {
             var outputFilePath = Path.Combine(outputDir, article.RelativeDirectoryPath, article.FileName);
             fileSystemHelper.EnsureDirectoryExists(Path.GetDirectoryName(outputFilePath)!);
-            var result = await renderingService.RenderLayoutTemplateAsync(CreateArticlePageModel(article, sideBarHtml, tagCatalog));
+            var result = await renderingService.RenderLayoutTemplateAsync(
+                CreateArticlePageModel(article, sideBarHtml, context.TagCatalog));
             await File.WriteAllTextAsync(outputFilePath, result, Encoding.UTF8);
-        }
+        });
     }
 
     /// <summary>
@@ -75,15 +81,28 @@ internal sealed class ArticlePageGenerator(
         // テーマパスがない旧来の呼び出しでは、存在確認を行わず従来どおりファイル名だけを返す
         if (string.IsNullOrEmpty(themeSettings.ThemePath)) return $"{templateName}.cshtml";
 
-        var matches = Directory.GetFiles(themeSettings.ThemePath, "*.cshtml", SearchOption.TopDirectoryOnly)
-            .Where(path => string.Equals(Path.GetFileNameWithoutExtension(path), templateName, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        if (matches.Length == 0)
+        if (!_fixedPageTemplates.Value.TryGetValue(templateName, out var matches))
             throw new InvalidOperationException($"Fixed page template '{templateName}.cshtml' was not found in theme '{themeSettings.ThemePath}'.");
         if (matches.Length > 1)
-            throw new InvalidOperationException($"Fixed page template '{templateName}' is ambiguous. Matching files: {string.Join(", ", matches.Select(Path.GetFileName))}.");
+            throw new InvalidOperationException($"Fixed page template '{templateName}' is ambiguous. Matching files: {string.Join(", ", matches)}.");
 
-        return Path.GetFileName(matches[0]);
+        return matches[0];
+    }
+
+    /// <summary>
+    /// テーマ直下のRazorテンプレートを1回だけ列挙し、大文字小文字を区別しない名前索引を構築する
+    /// </summary>
+    private static IReadOnlyDictionary<string, string[]> BuildFixedPageTemplateIndex(string themePath)
+    {
+        if (string.IsNullOrEmpty(themePath) || !Directory.Exists(themePath))
+            return new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+
+        return Directory.EnumerateFiles(themePath, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => string.Equals(Path.GetExtension(path), ".cshtml", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(path => Path.GetFileNameWithoutExtension(path), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal).ToArray()!,
+                StringComparer.OrdinalIgnoreCase);
     }
 }
