@@ -30,7 +30,8 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
         Console.WriteLine($"Build time: {buildContext.BuildTime:yyyy-MM-dd HH:mm:ss zzz}");
         Console.WriteLine($"Time zone: {timeProvider.LocalTimeZone.Id}");
 
-        DirectoryPathValidator.ThrowIfOutputDirectoryIsInputSubdirectory(options.InputPath, options.OutputPath);
+        // 成果物生成前に出力先を削除するため、入力元と出力先は親子関係も含めて完全に分離する
+        DirectoryPathValidator.ThrowIfInputAndOutputDirectoriesOverlap(options.InputPath, options.OutputPath);
         var (siteOption, feedOption) = BlogConfigurationLoader.Load(options.ConfigFile);
 
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -59,8 +60,8 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
         // 出力を開始する前に予約コンテンツをすべて検証し、途中まで生成された成果物が残ることを防ぐ
         await scheduledContentValidator.ValidateAsync(publicationSet.ScheduledContents, publicationSet.PublishedContents);
 
-        // ここから先を成果物生成フェーズとし、テーマ、コンテンツ、各ページ、フィードの順に出力する
-        fileSystemHelper.EnsureDirectoryExists(options.OutputPath);
+        // ここから先を成果物生成フェーズとする。前回生成された不要ファイルを残さないよう、出力先を空の状態へ戻す
+        OutputDirectoryPreparer.Recreate(options.OutputPath);
         themeProcessor.CopyThemeFilesToOutput(options.ThemePath, options.OutputPath);
         fileSystemHelper.CopyContentFiles(options.InputPath, options.OutputPath);
 
