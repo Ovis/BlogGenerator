@@ -6,12 +6,13 @@ namespace BlogGenerator.Core;
 internal static class DirectoryPathValidator
 {
     /// <summary>
-    /// 出力先が入力元と同一、または入力元の配下である場合に例外を送出する
+    /// 入力元と出力先が同一、またはいずれかが他方の配下である場合に例外を送出する
     /// </summary>
     /// <remarks>
-    /// 出力したファイルを次回以降の入力として再帰的に読み込むことを防止するための検証
+    /// 出力先は成果物生成前に再作成するため、出力先が入力元の親ディレクトリである場合も
+    /// 入力ファイルを削除する危険がある。入出力ディレクトリは完全に分離されている必要がある
     /// </remarks>
-    public static void ThrowIfOutputDirectoryIsInputSubdirectory(string inputDir, string outputDir)
+    public static void ThrowIfInputAndOutputDirectoriesOverlap(string inputDir, string outputDir)
     {
         var normalizedInputDir = NormalizeDirectoryPath(inputDir);
         var normalizedOutputDir = NormalizeDirectoryPath(outputDir);
@@ -20,9 +21,10 @@ internal static class DirectoryPathValidator
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
         if (string.Equals(normalizedInputDir, normalizedOutputDir, comparison) ||
-            normalizedOutputDir.StartsWith(normalizedInputDir + Path.DirectorySeparatorChar, comparison))
+            normalizedOutputDir.StartsWith(normalizedInputDir + Path.DirectorySeparatorChar, comparison) ||
+            normalizedInputDir.StartsWith(normalizedOutputDir + Path.DirectorySeparatorChar, comparison))
         {
-            throw new ArgumentException("Output directory must not be the same as or a subdirectory of the input directory.");
+            throw new ArgumentException("Input and output directories must not be the same or nested within each other.");
         }
     }
 

@@ -13,7 +13,7 @@ public class DirectoryPathValidatorTests
         var outputDir = Path.Combine(inputDir, "output");
 
         Assert.Throws<ArgumentException>(() =>
-            DirectoryPathValidator.ThrowIfOutputDirectoryIsInputSubdirectory(inputDir, outputDir));
+            DirectoryPathValidator.ThrowIfInputAndOutputDirectoriesOverlap(inputDir, outputDir));
     }
 
     [Test]
@@ -24,6 +24,6 @@ public class DirectoryPathValidatorTests
         var outputDir = Path.Combine(rootDir, "output");
 
         Assert.DoesNotThrow(() =>
-            DirectoryPathValidator.ThrowIfOutputDirectoryIsInputSubdirectory(inputDir, outputDir));
+            DirectoryPathValidator.ThrowIfInputAndOutputDirectoriesOverlap(inputDir, outputDir));
     }
 }
