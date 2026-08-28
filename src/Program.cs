@@ -1,6 +1,8 @@
 using System.CommandLine;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using BlogGenerator.Core;
 using BlogGenerator.Core.Interfaces;
 using BlogGenerator.MarkdigExtension;
@@ -18,13 +20,46 @@ public class Program
     internal static async Task<int> MainAsync(string[] args, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
-        var sw = Stopwatch.StartNew();
-        Console.WriteLine($"[Start] Total Execution Time: {sw.Elapsed}");
-
         var commandLineSetup = new CommandLineSetup();
         var rootCommand = commandLineSetup.CreateRootCommand();
+
+        commandLineSetup.ScheduledCommand.SetAction((parseResult, _) =>
+        {
+            try
+            {
+                var input = parseResult.GetRequiredValue(commandLineSetup.ScheduledInputOption);
+                if (!input.Exists) throw new ArgumentException($"Input directory does not exist: {input.FullName}");
+                var after = ParseBoundary(parseResult.GetRequiredValue(commandLineSetup.AfterOption), "--after");
+                var until = ParseBoundary(parseResult.GetRequiredValue(commandLineSetup.UntilOption), "--until");
+                if (after >= until) throw new ArgumentException("--after must be earlier than --until.");
+                var timeZoneId = parseResult.GetValue(commandLineSetup.TimeZoneOption);
+                var timeZone = string.IsNullOrWhiteSpace(timeZoneId) ? timeProvider.LocalTimeZone : TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+                var result = new ScheduledPublicationChecker(timeZone).Check(input.FullName, after, until);
+                Console.Out.WriteLine(SerializeScheduledResult(result));
+                return Task.FromResult(0);
+            }
+            catch (ScheduledPublicationCheckException ex)
+            {
+                Console.Error.WriteLine($"Scheduled publication check failed with {ex.Errors.Count} error(s):");
+                foreach (var error in ex.Errors)
+                {
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine(error.Path);
+                    Console.Error.WriteLine($"  {error.Exception.Message}");
+                }
+                return Task.FromResult(1);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                return Task.FromResult(1);
+            }
+        });
+
         rootCommand.SetAction(async (parseResult, _) =>
         {
+            var sw = Stopwatch.StartNew();
+            Console.WriteLine($"[Start] Total Execution Time: {sw.Elapsed}");
             var buildContext = new BuildContext(timeProvider.GetLocalNow());
             Console.WriteLine($"Build time: {buildContext.BuildTime:yyyy-MM-dd HH:mm:ss zzz}");
             Console.WriteLine($"Time zone: {timeProvider.LocalTimeZone.Id}");
@@ -64,8 +99,6 @@ public class Program
             var pageGenerator = serviceProvider.GetRequiredService<IPageGenerator>();
             var rssFeedGenerator = serviceProvider.GetRequiredService<IRssFeedGenerator>();
             await markdownProcessor.InitializeAsync();
-
-            // Read and validate all Markdown before touching output.
             var articles = await markdownProcessor.ProcessMarkdownFilesAsync(input.FullName, output.FullName, siteOption.BaseAbsolutePath);
             var publicationSet = PublicationSet.Create(articles, buildContext.BuildTime);
             var published = publicationSet.PublishedContents.ToList();
@@ -73,29 +106,20 @@ public class Program
             var validationErrors = new List<Exception>();
             foreach (var scheduled in publicationSet.ScheduledContents)
             {
-                try
-                {
-                    await pageGenerator.ValidateArticlePageAsync(scheduled, published, validationSideBar);
-                    Console.WriteLine($"Scheduled content validated: {scheduled.RootRelativePath} (Published: {scheduled.Published:yyyy-MM-dd HH:mm:ss zzz})");
-                }
-                catch (Exception ex)
-                {
-                    validationErrors.Add(new InvalidOperationException($"Failed to validate scheduled content '{scheduled.RootRelativePath}' (Published: {scheduled.Published:yyyy-MM-dd HH:mm:ss zzz}).", ex));
-                }
+                try { await pageGenerator.ValidateArticlePageAsync(scheduled, published, validationSideBar); Console.WriteLine($"Scheduled content validated: {scheduled.RootRelativePath} (Published: {scheduled.Published:yyyy-MM-dd HH:mm:ss zzz})"); }
+                catch (Exception ex) { validationErrors.Add(new InvalidOperationException($"Failed to validate scheduled content '{scheduled.RootRelativePath}' (Published: {scheduled.Published:yyyy-MM-dd HH:mm:ss zzz}).", ex)); }
             }
             if (validationErrors.Count != 0) throw new AggregateException("One or more scheduled contents failed validation.", validationErrors);
 
             fileSystemHelper.EnsureDirectoryExists(output.FullName);
             themeProcessor.CopyThemeFilesToOutput(theme.FullName, output.FullName);
             fileSystemHelper.CopyContentFiles(input.FullName, output.FullName);
-
             var sideBarHtml = await pageGenerator.GenerateSideBarHtmlAsync(published);
             await pageGenerator.GenerateArticlePagesAsync(published, output.FullName, sideBarHtml);
             await pageGenerator.GenerateIndexPagesAsync(published, output.FullName, sideBarHtml);
             await pageGenerator.GenerateTagPagesAsync(published, output.FullName, sideBarHtml);
             await pageGenerator.GenerateArchivePagesAsync(published, output.FullName, sideBarHtml);
             await rssFeedGenerator.GenerateRssAndAtomFeedsAsync(published, output.FullName);
-
             if (!string.IsNullOrEmpty(oEmbedDir)) await OEmbedCacheStore.SaveAsync(oEmbedDir, markdownProcessor.OEmbedCache);
             if (!string.IsNullOrEmpty(amazonCachePath)) await AmazonProductMetadataCacheStore.SaveAsync(amazonCachePath, markdownProcessor.AmazonProductMetadataCache);
             Console.WriteLine("Completed: " + sw.Elapsed);
@@ -105,34 +129,50 @@ public class Program
         return await rootCommand.Parse(args, new ParserConfiguration()).InvokeAsync(new InvocationConfiguration { Output = Console.Out, Error = Console.Error });
     }
 
+    private static DateTimeOffset ParseBoundary(string value, string optionName)
+    {
+        var formats = new[] { "yyyy-MM-dd'T'HH:mm:ssK", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK" };
+        if (!HasRequiredOffset(value) || !DateTimeOffset.TryParseExact(value, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var result))
+            throw new ArgumentException($"{optionName} must be an ISO 8601 date/time with Z or an offset in ±HH:mm format.");
+        return result;
+    }
+
+    private static bool HasRequiredOffset(string value) => value.EndsWith("Z", StringComparison.Ordinal) || System.Text.RegularExpressions.Regex.IsMatch(value, @"[+-]\d{2}:\d{2}$");
+
+    private static string SerializeScheduledResult(ScheduledPublicationCheckResult result)
+    {
+        static string Format(DateTimeOffset value, bool forceUtcZ = false)
+        {
+            if (forceUtcZ || value.Offset == TimeSpan.Zero) return value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+            return value.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffffzzz", CultureInfo.InvariantCulture);
+        }
+        var dto = new
+        {
+            hasScheduled = result.HasScheduled,
+            after = Format(result.After, true),
+            until = Format(result.Until, true),
+            timeZone = result.TimeZone.Id,
+            count = result.Count,
+            items = result.Items.Select(x => new { path = x.Path, published = Format(x.Published) }).ToArray()
+        };
+        return JsonSerializer.Serialize(dto, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+    }
+
     private static IServiceProvider ConfigureServices(SiteOption siteOption, FeedOption feedOption, string themePath, string? oEmbedDir, string? amazonCachePath, TimeZoneInfo timeZone)
     {
         var services = new ServiceCollection();
         services.AddSingleton<RazorLightEngine>(_ => new RazorLightEngineBuilder().UseFileSystemProject(themePath).UseMemoryCachingProvider().Build());
         services.AddSingleton<IAmazonCardTemplateRenderer>(sp => new AmazonCardTemplateRenderer(sp.GetRequiredService<RazorLightEngine>(), themePath));
         services.AddSingleton(_ => new AmazonProductMetadataResolver(new AmazonProductHttpFetcher(AmazonProductHttpFetcher.CreateHttpClient()), new AmazonProductPageParser()));
-        services.AddSingleton(siteOption);
-        services.AddSingleton(feedOption);
-        services.AddSingleton(new ThemeSettings(themePath));
-        services.AddSingleton(_ => oEmbedDir ?? string.Empty);
-        services.AddSingleton(new AmazonProductMetadataCacheSettings(amazonCachePath ?? string.Empty));
-        services.AddSingleton(timeZone);
-        services.AddSingleton<IFileSystemHelper, FileSystemHelper>();
-        services.AddSingleton<IThemeProcessor, ThemeProcessor>();
-        services.AddSingleton<IMarkdownProcessor, MarkdownProcessor>();
-        services.AddSingleton<IPageGenerator, PageGenerator>();
-        services.AddSingleton<IRssFeedGenerator, RssFeedGenerator>();
+        services.AddSingleton(siteOption); services.AddSingleton(feedOption); services.AddSingleton(new ThemeSettings(themePath)); services.AddSingleton(_ => oEmbedDir ?? string.Empty); services.AddSingleton(new AmazonProductMetadataCacheSettings(amazonCachePath ?? string.Empty)); services.AddSingleton(timeZone);
+        services.AddSingleton<IFileSystemHelper, FileSystemHelper>(); services.AddSingleton<IThemeProcessor, ThemeProcessor>(); services.AddSingleton<IMarkdownProcessor, MarkdownProcessor>(); services.AddSingleton<IPageGenerator, PageGenerator>(); services.AddSingleton<IRssFeedGenerator, RssFeedGenerator>();
         return services.BuildServiceProvider();
     }
 
     private static void ThrowIfOutputDirectoryIsInputSubdirectory(string inputDir, string outputDir)
     {
-        var normalizedInputDir = NormalizeDirectoryPath(inputDir);
-        var normalizedOutputDir = NormalizeDirectoryPath(outputDir);
-        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (string.Equals(normalizedInputDir, normalizedOutputDir, comparison) || normalizedOutputDir.StartsWith(normalizedInputDir + Path.DirectorySeparatorChar, comparison))
-            throw new ArgumentException("Output directory must not be the same as or a subdirectory of the input directory.");
+        var normalizedInputDir = NormalizeDirectoryPath(inputDir); var normalizedOutputDir = NormalizeDirectoryPath(outputDir); var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (string.Equals(normalizedInputDir, normalizedOutputDir, comparison) || normalizedOutputDir.StartsWith(normalizedInputDir + Path.DirectorySeparatorChar, comparison)) throw new ArgumentException("Output directory must not be the same as or a subdirectory of the input directory.");
     }
-
     private static string NormalizeDirectoryPath(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 }
