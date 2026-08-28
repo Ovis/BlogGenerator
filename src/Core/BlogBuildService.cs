@@ -22,13 +22,13 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
     /// <returns>正常終了時は0</returns>
     public async Task<int> BuildAsync(BuildOptions options)
     {
-        var sw = Stopwatch.StartNew();
-        Console.WriteLine($"[Start] Total Execution Time: {sw.Elapsed}");
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStopwatch = Stopwatch.StartNew();
+        var progress = new BuildProgressReporter(Console.Out);
 
         // ビルド中に現在時刻が変化しても公開判定が揺れないよう、開始時刻を1度だけ確定する
         var buildContext = new BuildContext(timeProvider.GetLocalNow());
-        Console.WriteLine($"Build time: {buildContext.BuildTime:yyyy-MM-dd HH:mm:ss zzz}");
-        Console.WriteLine($"Time zone: {timeProvider.LocalTimeZone.Id}");
+        progress.WriteBuildStarted(buildContext.BuildTime, timeProvider.LocalTimeZone.Id);
 
         // 成果物生成前に出力先を削除するため、入力元と出力先は親子関係も含めて完全に分離する
         DirectoryPathValidator.ThrowIfInputAndOutputDirectoriesOverlap(options.InputPath, options.OutputPath);
@@ -50,35 +50,60 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
         var pageGenerator = serviceProvider.GetRequiredService<IPageGenerator>();
         var rssFeedGenerator = serviceProvider.GetRequiredService<IRssFeedGenerator>();
         var scheduledContentValidator = new ScheduledContentValidator(pageGenerator);
+        progress.WritePhaseCompleted("Setup", phaseStopwatch.Elapsed);
 
         // Markdownの解析と公開状態の分類までは、出力ディレクトリへ変更を加えない
+        phaseStopwatch.Restart();
         await markdownProcessor.InitializeAsync();
         var articles = await markdownProcessor.ProcessMarkdownFilesAsync(options.InputPath, options.OutputPath, siteOption.BaseAbsolutePath);
         var publicationSet = PublicationSet.Create(articles, buildContext.BuildTime);
         var published = publicationSet.PublishedContents.ToList();
+        progress.WritePhaseCompleted(
+            "Parse",
+            phaseStopwatch.Elapsed,
+            $"published: {publicationSet.PublishedContents.Count}, scheduled: {publicationSet.ScheduledContents.Count}, drafts: {publicationSet.DraftContents.Count}");
 
         // 出力を開始する前に予約コンテンツをすべて検証し、途中まで生成された成果物が残ることを防ぐ
+        phaseStopwatch.Restart();
         await scheduledContentValidator.ValidateAsync(publicationSet.ScheduledContents, publicationSet.PublishedContents);
+        progress.WritePhaseCompleted("Validate", phaseStopwatch.Elapsed, $"scheduled: {publicationSet.ScheduledContents.Count}");
 
         // ここから先を成果物生成フェーズとする。前回生成された不要ファイルを残さないよう、出力先を空の状態へ戻す
+        phaseStopwatch.Restart();
         OutputDirectoryPreparer.Recreate(options.OutputPath);
         themeProcessor.CopyThemeFilesToOutput(options.ThemePath, options.OutputPath);
         fileSystemHelper.CopyContentFiles(options.InputPath, options.OutputPath);
+        progress.WritePhaseCompleted("Assets", phaseStopwatch.Elapsed);
 
+        phaseStopwatch.Restart();
         var sideBarHtml = await pageGenerator.GenerateSideBarHtmlAsync(published);
         await pageGenerator.GenerateArticlePagesAsync(published, options.OutputPath, sideBarHtml);
         await pageGenerator.GenerateIndexPagesAsync(published, options.OutputPath, sideBarHtml);
         await pageGenerator.GenerateTagPagesAsync(published, options.OutputPath, sideBarHtml);
         await pageGenerator.GenerateArchivePagesAsync(published, options.OutputPath, sideBarHtml);
+        progress.WritePhaseCompleted("Render", phaseStopwatch.Elapsed, $"published: {published.Count}");
+
+        phaseStopwatch.Restart();
         await rssFeedGenerator.GenerateRssAndAtomFeedsAsync(published, options.OutputPath);
+        progress.WritePhaseCompleted("Feed", phaseStopwatch.Elapsed);
 
         // キャッシュはサイト生成が完了した場合だけ保存し、失敗したビルドの途中状態を永続化しない
+        phaseStopwatch.Restart();
+        var cacheFileCount = 0;
         if (!string.IsNullOrEmpty(options.OEmbedCachePath))
+        {
             await OEmbedCacheStore.SaveAsync(options.OEmbedCachePath, markdownProcessor.OEmbedCache);
-        if (!string.IsNullOrEmpty(options.AmazonCachePath))
-            await AmazonProductMetadataCacheStore.SaveAsync(options.AmazonCachePath, markdownProcessor.AmazonProductMetadataCache);
+            cacheFileCount++;
+        }
 
-        Console.WriteLine("Completed: " + sw.Elapsed);
+        if (!string.IsNullOrEmpty(options.AmazonCachePath))
+        {
+            await AmazonProductMetadataCacheStore.SaveAsync(options.AmazonCachePath, markdownProcessor.AmazonProductMetadataCache);
+            cacheFileCount++;
+        }
+
+        progress.WritePhaseCompleted("Cache", phaseStopwatch.Elapsed, $"files: {cacheFileCount}");
+        progress.WriteBuildCompleted(totalStopwatch.Elapsed);
         return 0;
     }
 }
