@@ -34,6 +34,18 @@ internal sealed class BuildProgressReporter(TextWriter output)
     }
 
     /// <summary>
+    /// Markdown処理中のoEmbedとAmazonのキャッシュ利用状況、外部取得件数、累積時間を出力する
+    /// </summary>
+    /// <param name="metrics">外部埋め込み解決の計測結果</param>
+    public void WriteExternalResolutionMetrics(ExternalResolutionMetrics metrics)
+    {
+        output.WriteLine(
+            $"[oEmbed] cache hits: {metrics.OEmbedCacheHits}, misses: {metrics.OEmbedCacheMisses}, HTTP requests: {metrics.OEmbedHttpRequests}, HTTP cumulative: {FormatDuration(metrics.OEmbedHttpElapsed)}");
+        output.WriteLine(
+            $"[Amazon] cache hits: {metrics.AmazonCacheHits}, misses: {metrics.AmazonCacheMisses}, HTTP requests: {metrics.AmazonHttpRequests}, fetch cumulative: {FormatDuration(metrics.AmazonFetchElapsed)}");
+    }
+
+    /// <summary>
     /// ビルド全体の完了と総経過時間を出力する
     /// </summary>
     /// <param name="elapsed">ビルド全体の経過時間</param>

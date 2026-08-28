@@ -63,6 +63,9 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
             phaseStopwatch.Elapsed,
             $"published: {publicationSet.PublishedContents.Count}, scheduled: {publicationSet.ScheduledContents.Count}, drafts: {publicationSet.DraftContents.Count}");
 
+        // Parse時間の大半を外部取得が占めているか判断できるよう、キャッシュ利用状況と取得累積時間を続けて出力する
+        progress.WriteExternalResolutionMetrics(markdownProcessor.ExternalResolutionMetrics);
+
         // 出力を開始する前に予約コンテンツをすべて検証し、途中まで生成された成果物が残ることを防ぐ
         phaseStopwatch.Restart();
         await scheduledContentValidator.ValidateAsync(publicationSet.ScheduledContents, publicationSet.PublishedContents);

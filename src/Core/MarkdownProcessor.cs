@@ -18,6 +18,7 @@ public class MarkdownProcessor : IMarkdownProcessor
     private readonly OEmbedCardParser _oEmbedParser;
     private readonly SemaphoreSlim _initializationSemaphore = new(1, 1);
     private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder().UseYamlFrontMatter().Build();
+    private readonly ExternalRequestMetrics _oEmbedRequestMetrics = new();
     private readonly Func<Task<OEmbedProviderCatalog>> _oEmbedProviderCatalogLoader;
     private readonly IAmazonCardTemplateRenderer? _amazonCardTemplateRenderer;
     private readonly AmazonProductMetadataResolver? _amazonProductMetadataResolver;
@@ -69,9 +70,9 @@ public class MarkdownProcessor : IMarkdownProcessor
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
         _frontMatterParser = new FrontMatterParser(timeZone);
-        _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver();
+        _oEmbedResolver = oEmbedResolver ?? CreateDefaultResolver(_oEmbedRequestMetrics);
         _oEmbedParser = oEmbedParser ?? new OEmbedCardParser();
-        _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? LoadDefaultProviderCatalogAsync;
+        _oEmbedProviderCatalogLoader = oEmbedProviderCatalogLoader ?? (() => LoadDefaultProviderCatalogAsync(_oEmbedRequestMetrics));
         _amazonCardTemplateRenderer = amazonCardTemplateRenderer;
         _amazonProductMetadataResolver = amazonProductMetadataResolver;
         _amazonCacheSettings = amazonCacheSettings;
@@ -90,6 +91,28 @@ public class MarkdownProcessor : IMarkdownProcessor
     /// </summary>
     public ConcurrentDictionary<string, AmazonProductMetadataCacheEntry> AmazonProductMetadataCache =>
         _amazonProductMetadataResolver?.Cache ?? [];
+
+    /// <summary>
+    /// Markdown処理中に発生した外部埋め込み解決の計測結果を取得する
+    /// </summary>
+    public ExternalResolutionMetrics ExternalResolutionMetrics
+    {
+        get
+        {
+            var (oEmbedCacheHits, oEmbedCacheMisses) = _oEmbedResolver.GetCacheMetrics();
+            var oEmbedRequests = _oEmbedRequestMetrics.GetSnapshot();
+            var amazonMetrics = _amazonProductMetadataResolver?.GetMetrics();
+
+            return new ExternalResolutionMetrics(
+                oEmbedCacheHits,
+                oEmbedCacheMisses,
+                oEmbedRequests.RequestCount,
+                oEmbedRequests.Elapsed,
+                amazonMetrics?.CacheHits ?? 0,
+                amazonMetrics?.CacheMisses ?? 0,
+                amazonMetrics?.FetchElapsed ?? TimeSpan.Zero);
+        }
+    }
 
     /// <summary>
     /// キャッシュとMarkdown変換パイプラインを初期化する
@@ -198,12 +221,15 @@ public class MarkdownProcessor : IMarkdownProcessor
     /// <summary>
     /// provider一覧を空の状態で開始する既定oEmbed resolverを生成する
     /// </summary>
-    private static OEmbedResolver CreateDefaultResolver() =>
-        new(new OEmbedProviderCatalog([]), CreateOEmbedHttpClient());
+    private static OEmbedResolver CreateDefaultResolver(ExternalRequestMetrics requestMetrics)
+    {
+        var fetcher = new OEmbedHttpFetcher(CreateOEmbedHttpClient(), requestMetrics);
+        return new OEmbedResolver(new OEmbedProviderCatalog([]), fetcher);
+    }
 
     /// <summary>
     /// 公開oEmbed provider一覧を取得する
     /// </summary>
-    private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync() =>
-        await new OEmbedProviderCatalogLoader(new OEmbedHttpFetcher(CreateOEmbedHttpClient())).LoadAsync();
+    private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync(ExternalRequestMetrics requestMetrics) =>
+        await new OEmbedProviderCatalogLoader(new OEmbedHttpFetcher(CreateOEmbedHttpClient(), requestMetrics)).LoadAsync();
 }

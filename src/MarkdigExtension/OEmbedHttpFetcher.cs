@@ -3,9 +3,26 @@ using Hnx8.ReadJEnc;
 
 namespace BlogGenerator.MarkdigExtension;
 
-public class OEmbedHttpFetcher(HttpClient httpClient)
+public class OEmbedHttpFetcher
 {
-    private readonly HttpClient _httpClient = httpClient;
+    private readonly HttpClient _httpClient;
+    private readonly ExternalRequestMetrics? _requestMetrics;
+
+    public OEmbedHttpFetcher(HttpClient httpClient)
+        : this(httpClient, null)
+    {
+    }
+
+    /// <summary>
+    /// HTTP取得の計測先を指定してoEmbed fetcherを生成する
+    /// </summary>
+    /// <param name="httpClient">HTTP取得に使用するクライアント</param>
+    /// <param name="requestMetrics">取得件数と累積時間の記録先</param>
+    internal OEmbedHttpFetcher(HttpClient httpClient, ExternalRequestMetrics? requestMetrics)
+    {
+        _httpClient = httpClient;
+        _requestMetrics = requestMetrics;
+    }
 
     /// <summary>
     /// oEmbed関連のHTTP取得を共通化する
@@ -42,7 +59,7 @@ public class OEmbedHttpFetcher(HttpClient httpClient)
 
     private async Task<HttpResponseMessage> SendAsyncFollowingRedirectAsync(string url)
     {
-        var response = await _httpClient.GetAsync(url);
+        var response = await GetAsyncMeasured(url);
 
         // 既存実装互換のため、明示的に1回だけリダイレクト先を追従する
         if (response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.MovedPermanently)
@@ -51,12 +68,20 @@ public class OEmbedHttpFetcher(HttpClient httpClient)
             if (!string.IsNullOrEmpty(redirectUrl))
             {
                 response.Dispose();
-                return await _httpClient.GetAsync(redirectUrl);
+                return await GetAsyncMeasured(redirectUrl);
             }
         }
 
         return response;
     }
+
+    /// <summary>
+    /// 実際のHTTP GET 1回を実行し、計測が有効な場合は件数と所要時間を記録する
+    /// </summary>
+    private Task<HttpResponseMessage> GetAsyncMeasured(string url) =>
+        _requestMetrics is null
+            ? _httpClient.GetAsync(url)
+            : _requestMetrics.MeasureAsync(() => _httpClient.GetAsync(url));
 
     private static string ResolveUrl(string baseUrl, string? candidate)
     {

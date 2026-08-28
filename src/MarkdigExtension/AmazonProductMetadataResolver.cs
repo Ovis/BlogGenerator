@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 
 namespace BlogGenerator.MarkdigExtension;
@@ -16,6 +17,9 @@ public sealed class AmazonProductMetadataResolver
     private readonly IAmazonProductPageFetcher _fetcher;
     private readonly AmazonProductPageParser _parser;
     private readonly Func<DateTimeOffset> _utcNowProvider;
+    private long _cacheHits;
+    private long _cacheMisses;
+    private long _fetchElapsedTicks;
 
     public AmazonProductMetadataResolver(
         IAmazonProductPageFetcher fetcher,
@@ -32,6 +36,15 @@ public sealed class AmazonProductMetadataResolver
     public ConcurrentDictionary<string, AmazonProductMetadataCacheEntry> Cache { get; }
 
     /// <summary>
+    /// 現在までのキャッシュ利用状況と商品ページ取得の累積時間を取得する
+    /// </summary>
+    internal (long CacheHits, long CacheMisses, TimeSpan FetchElapsed) GetMetrics() =>
+        (
+            Interlocked.Read(ref _cacheHits),
+            Interlocked.Read(ref _cacheMisses),
+            TimeSpan.FromTicks(Interlocked.Read(ref _fetchElapsedTicks)));
+
+    /// <summary>
     /// ASINからカード用メタデータを解決する
     /// </summary>
     public async Task<AmazonProductMetadata?> ResolveAsync(string asin)
@@ -41,10 +54,23 @@ public sealed class AmazonProductMetadataResolver
         if (Cache.TryGetValue(normalizedAsin, out var cachedEntry) &&
             (cachedEntry.IsFresh(now) || cachedEntry.ShouldSkipRetry(now)))
         {
+            Interlocked.Increment(ref _cacheHits);
             return cachedEntry.ToMetadata();
         }
 
-        var fetchResult = await _fetcher.FetchAsync(normalizedAsin);
+        // Amazon商品ページはcache missごとに1回取得するため、miss件数はHTTP取得件数としても利用できる
+        Interlocked.Increment(ref _cacheMisses);
+        var fetchStopwatch = Stopwatch.StartNew();
+        AmazonProductFetchResult fetchResult;
+        try
+        {
+            fetchResult = await _fetcher.FetchAsync(normalizedAsin);
+        }
+        finally
+        {
+            Interlocked.Add(ref _fetchElapsedTicks, fetchStopwatch.Elapsed.Ticks);
+        }
+
         var resolution = ResolveFetchResult(fetchResult);
         if (resolution.Metadata is not null)
         {
