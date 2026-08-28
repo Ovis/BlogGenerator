@@ -1,10 +1,19 @@
 namespace BlogGenerator.Models;
 
+/// <summary>
+/// ビルド対象コンテンツを、公開済み、予約公開、下書きの状態別に分類した結果
+/// </summary>
 internal sealed record PublicationSet(
     IReadOnlyList<Article> PublishedContents,
     IReadOnlyList<Article> ScheduledContents,
     IReadOnlyList<Article> DraftContents)
 {
+    /// <summary>
+    /// 指定されたビルド時刻を基準として、すべての記事を公開状態別に分類する
+    /// </summary>
+    /// <param name="articles">分類対象の記事</param>
+    /// <param name="buildTime">公開状態を判定する基準時刻</param>
+    /// <returns>公開状態別に分類された記事集合</returns>
     internal static PublicationSet Create(IEnumerable<Article> articles, DateTimeOffset buildTime)
     {
         ArgumentNullException.ThrowIfNull(articles);
@@ -34,6 +43,7 @@ internal sealed record PublicationSet(
             }
         }
 
+        // 予約コンテンツは公開予定時刻、同時刻ならパスの順に固定し、検証結果を再現可能にする
         scheduled.Sort((left, right) =>
         {
             var publishedComparison = Nullable.Compare(left.Published, right.Published);
