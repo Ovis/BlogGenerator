@@ -16,19 +16,42 @@ internal sealed class PageRenderingService(
 {
     private const int ArticlesPerPage = 10;
     private const int MaxPaginationLinks = 6;
+    private readonly SemaphoreSlim _renderSemaphore = new(BuildConcurrency.RenderingDegreeOfParallelism);
+    private readonly SemaphoreSlim _layoutCompilationSemaphore = new(1, 1);
 
     /// <summary>
     /// 指定されたページモデルをレイアウトテンプレートでレンダリングする
     /// </summary>
     /// <remarks>
-    /// RazorLightがすでにコンパイル済みのレイアウトを保持している場合は、それを再利用して再コンパイルを避ける
+    /// 初回コンパイルだけは直列化し、以後はRazorLightのコンパイル済みテンプレートを上限付きで並列レンダリングする
     /// </remarks>
     public async Task<string> RenderLayoutTemplateAsync(PageModel model)
     {
-        var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
-        return cacheResult.Success
-            ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
-            : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
+        await _renderSemaphore.WaitAsync();
+        try
+        {
+            var cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+            if (cacheResult.Success)
+                return await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model);
+
+            // 複数ページが同時に初回レンダリングへ到達してもLayout.cshtmlを重複コンパイルしない
+            await _layoutCompilationSemaphore.WaitAsync();
+            try
+            {
+                cacheResult = razorLightEngine.Handler.Cache.RetrieveTemplate("Layout.cshtml");
+                return cacheResult.Success
+                    ? await razorLightEngine.RenderTemplateAsync(cacheResult.Template.TemplatePageFactory(), model)
+                    : await razorLightEngine.CompileRenderAsync("Layout.cshtml", model);
+            }
+            finally
+            {
+                _layoutCompilationSemaphore.Release();
+            }
+        }
+        finally
+        {
+            _renderSemaphore.Release();
+        }
     }
 
     /// <summary>
@@ -42,8 +65,12 @@ internal sealed class PageRenderingService(
         Func<int, string> getOutputFilePath)
     {
         var pagedArticles = SplitIntoPages(articles);
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = BuildConcurrency.RenderingDegreeOfParallelism
+        };
 
-        for (var pageIndex = 0; pageIndex < pagedArticles.Count; pageIndex++)
+        await Parallel.ForEachAsync(Enumerable.Range(0, pagedArticles.Count), parallelOptions, async (pageIndex, _) =>
         {
             var pageNumber = pageIndex + 1;
             var outputFilePath = getOutputFilePath(pageNumber);
@@ -68,7 +95,7 @@ internal sealed class PageRenderingService(
             };
 
             await File.WriteAllTextAsync(outputFilePath, await RenderLayoutTemplateAsync(model), Encoding.UTF8);
-        }
+        });
     }
 
     /// <summary>
