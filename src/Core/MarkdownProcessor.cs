@@ -110,6 +110,7 @@ public class MarkdownProcessor : IMarkdownProcessor
                 oEmbedRequests.Elapsed,
                 amazonMetrics?.CacheHits ?? 0,
                 amazonMetrics?.CacheMisses ?? 0,
+                amazonMetrics?.HttpRequests ?? 0,
                 amazonMetrics?.FetchElapsed ?? TimeSpan.Zero);
         }
     }
