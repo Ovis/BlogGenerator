@@ -49,6 +49,38 @@ public class OEmbedCacheStoreTests
     }
 
     [Test]
+    public async Task OGP表示モデルを保存して再読込できる()
+    {
+        const string url = "https://example.com/post";
+        var filePath = Path.Combine(_testRootPath, "oembed-ogp-cache.json");
+        var sourceCache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        var model = new OgpCardModel(
+            url,
+            "example.com/post",
+            "タイトル",
+            "説明",
+            "Example",
+            "https://example.com/image.png",
+            "https://example.com/favicon.ico");
+        sourceCache[url] = OEmbedCacheEntry.CreateOgpSuccess(
+            model,
+            new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero),
+            TimeSpan.FromDays(180));
+
+        await OEmbedCacheStore.SaveAsync(filePath, sourceCache);
+
+        var loadedCache = new ConcurrentDictionary<string, OEmbedCacheEntry>();
+        await OEmbedCacheStore.LoadAsync(filePath, loadedCache);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loadedCache[url].OgpCard, Is.EqualTo(model));
+            Assert.That(loadedCache[url].HtmlContent, Is.Empty);
+            Assert.That(loadedCache[url].Status, Is.EqualTo(OEmbedCacheEntryStatus.Success));
+        });
+    }
+
+    [Test]
     public async Task 旧形式キャッシュは成功エントリとして読める()
     {
         var filePath = Path.Combine(_testRootPath, "oembed-cache-legacy.json");
