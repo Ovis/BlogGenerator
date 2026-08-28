@@ -4,11 +4,12 @@ using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
 using Markdig.Extensions.Yaml;
-using Markdig.Renderers;
-using Markdig.Syntax;
 
 namespace BlogGenerator.Core;
 
+/// <summary>
+/// Markdownファイル群の列挙、初期化、Articleへの変換順序を管理する
+/// </summary>
 public class MarkdownProcessor : IMarkdownProcessor
 {
     private readonly SiteOption _siteOption;
@@ -16,21 +17,54 @@ public class MarkdownProcessor : IMarkdownProcessor
     private readonly FrontMatterParser _frontMatterParser;
     private readonly OEmbedCardParser _oEmbedParser;
     private readonly SemaphoreSlim _initializationSemaphore = new(1, 1);
-    private readonly SemaphoreSlim _oEmbedProviderSemaphore = new(1, 1);
     private readonly MarkdownPipeline _frontMatterPipeline = new MarkdownPipelineBuilder().UseYamlFrontMatter().Build();
     private readonly Func<Task<OEmbedProviderCatalog>> _oEmbedProviderCatalogLoader;
     private readonly IAmazonCardTemplateRenderer? _amazonCardTemplateRenderer;
     private readonly AmazonProductMetadataResolver? _amazonProductMetadataResolver;
     private readonly AmazonProductMetadataCacheSettings? _amazonCacheSettings;
-    private OEmbedResolver _oEmbedResolver;
-    private MarkdownPipeline? _contentPipeline;
+    private readonly OEmbedResolver _oEmbedResolver;
+    private readonly bool _oEmbedProviderCatalogInitiallyLoaded;
+    private MarkdownContentProcessor? _contentProcessor;
     private bool _isInitialized;
-    private bool _oEmbedProviderCatalogLoaded;
 
-    public MarkdownProcessor(SiteOption siteOption, string oEmbedDir, OEmbedResolver? oEmbedResolver = null, OEmbedCardParser? oEmbedParser = null, Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null, IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null, AmazonProductMetadataResolver? amazonProductMetadataResolver = null, AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
-        : this(siteOption, oEmbedDir, TimeZoneInfo.Local, oEmbedResolver, oEmbedParser, oEmbedProviderCatalogLoader, amazonCardTemplateRenderer, amazonProductMetadataResolver, amazonCacheSettings) { }
+    /// <summary>
+    /// ローカルタイムゾーンを使用してMarkdownProcessorを生成する
+    /// </summary>
+    public MarkdownProcessor(
+        SiteOption siteOption,
+        string oEmbedDir,
+        OEmbedResolver? oEmbedResolver = null,
+        OEmbedCardParser? oEmbedParser = null,
+        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null,
+        IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null,
+        AmazonProductMetadataResolver? amazonProductMetadataResolver = null,
+        AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
+        : this(
+            siteOption,
+            oEmbedDir,
+            TimeZoneInfo.Local,
+            oEmbedResolver,
+            oEmbedParser,
+            oEmbedProviderCatalogLoader,
+            amazonCardTemplateRenderer,
+            amazonProductMetadataResolver,
+            amazonCacheSettings)
+    {
+    }
 
-    public MarkdownProcessor(SiteOption siteOption, string oEmbedDir, TimeZoneInfo timeZone, OEmbedResolver? oEmbedResolver = null, OEmbedCardParser? oEmbedParser = null, Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null, IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null, AmazonProductMetadataResolver? amazonProductMetadataResolver = null, AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
+    /// <summary>
+    /// 公開日時の解釈に使用するタイムゾーンを指定してMarkdownProcessorを生成する
+    /// </summary>
+    public MarkdownProcessor(
+        SiteOption siteOption,
+        string oEmbedDir,
+        TimeZoneInfo timeZone,
+        OEmbedResolver? oEmbedResolver = null,
+        OEmbedCardParser? oEmbedParser = null,
+        Func<Task<OEmbedProviderCatalog>>? oEmbedProviderCatalogLoader = null,
+        IAmazonCardTemplateRenderer? amazonCardTemplateRenderer = null,
+        AmazonProductMetadataResolver? amazonProductMetadataResolver = null,
+        AmazonProductMetadataCacheSettings? amazonCacheSettings = null)
     {
         _siteOption = siteOption;
         _oEmbedDir = oEmbedDir;
@@ -41,91 +75,135 @@ public class MarkdownProcessor : IMarkdownProcessor
         _amazonCardTemplateRenderer = amazonCardTemplateRenderer;
         _amazonProductMetadataResolver = amazonProductMetadataResolver;
         _amazonCacheSettings = amazonCacheSettings;
-        _oEmbedProviderCatalogLoaded = oEmbedResolver is not null;
+
+        // Resolverを外部から受け取った場合はprovider一覧も設定済みという従来の契約を維持する
+        _oEmbedProviderCatalogInitiallyLoaded = oEmbedResolver is not null;
     }
 
+    /// <summary>
+    /// 現在のoEmbedキャッシュを取得する
+    /// </summary>
     public ConcurrentDictionary<string, OEmbedCacheEntry> OEmbedCache => _oEmbedResolver.OEmbedCache;
-    public ConcurrentDictionary<string, AmazonProductMetadataCacheEntry> AmazonProductMetadataCache => _amazonProductMetadataResolver?.Cache ?? [];
+
+    /// <summary>
+    /// 現在のAmazon商品メタデータキャッシュを取得する
+    /// </summary>
+    public ConcurrentDictionary<string, AmazonProductMetadataCacheEntry> AmazonProductMetadataCache =>
+        _amazonProductMetadataResolver?.Cache ?? [];
+
+    /// <summary>
+    /// キャッシュとMarkdown変換パイプラインを初期化する
+    /// </summary>
     public Task InitializeAsync() => EnsureInitializedAsync();
 
+    /// <summary>
+    /// 入力ディレクトリ配下のMarkdownファイルをすべてArticleへ変換する
+    /// </summary>
     public async Task<List<Article>> ProcessMarkdownFilesAsync(string inputDir, string outputDir, string baseAbsolutePath)
     {
         await EnsureInitializedAsync();
-        var filePaths = Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories).Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase)).ToArray();
-        var articles = await Task.WhenAll(filePaths.Select(filePath => ProcessMarkdownFileAsync(inputDir, filePath, baseAbsolutePath)));
+
+        // 拡張子比較は大文字小文字を区別せず、従来どおり全サブディレクトリを対象にする
+        var filePaths = Directory.GetFiles(inputDir, "*", SearchOption.AllDirectories)
+            .Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        var articles = await Task.WhenAll(
+            filePaths.Select(filePath => ProcessMarkdownFileAsync(inputDir, filePath, baseAbsolutePath)));
+
         return articles.OrderByDescending(x => x.Published).ToList();
     }
 
+    /// <summary>
+    /// 1つのMarkdownファイルから公開パスを組み立て、Articleへ変換する
+    /// </summary>
     private async Task<Article> ProcessMarkdownFileAsync(string inputDir, string filePath, string baseAbsolutePath)
     {
-        var relativePathExcludeFileName = Path.GetRelativePath(inputDir, Path.GetDirectoryName(filePath)!).Replace("\\", "/");
-        relativePathExcludeFileName = relativePathExcludeFileName == "." ? string.Empty : relativePathExcludeFileName;
-        var routeRelativePath = PageModelBase.CombineUrlPath(baseAbsolutePath, relativePathExcludeFileName);
-        var (html, frontMatter) = await ParseMarkdownWithFrontmatterAsync(filePath, routeRelativePath);
-        return new Article(Path.ChangeExtension(Path.GetFileNameWithoutExtension(filePath), ".html"), frontMatter.Title, html, frontMatter.Tags ?? [], frontMatter.Published, relativePathExcludeFileName, routeRelativePath, frontMatter.IsFixedPage, frontMatter.Template ?? string.Empty);
+        var relativeDirectoryPath = Path.GetRelativePath(inputDir, Path.GetDirectoryName(filePath)!)
+            .Replace("\\", "/");
+        relativeDirectoryPath = relativeDirectoryPath == "." ? string.Empty : relativeDirectoryPath;
+
+        var routeRelativePath = PageModelBase.CombineUrlPath(baseAbsolutePath, relativeDirectoryPath);
+        var (html, frontMatter) = await _contentProcessor!.ProcessAsync(filePath, routeRelativePath);
+
+        return new Article(
+            Path.ChangeExtension(Path.GetFileNameWithoutExtension(filePath), ".html"),
+            frontMatter.Title,
+            html,
+            frontMatter.Tags ?? [],
+            frontMatter.Published,
+            relativeDirectoryPath,
+            routeRelativePath,
+            frontMatter.IsFixedPage,
+            frontMatter.Template ?? string.Empty);
     }
 
-    private async Task<(string html, Frontmatter frontMatter)> ParseMarkdownWithFrontmatterAsync(string path, string basePath)
-    {
-        var markdown = File.ReadAllText(path);
-        var writer = new StringWriter();
-        var renderer = new HtmlRenderer(writer);
-        _contentPipeline!.Setup(renderer);
-        var document = Markdown.Parse(markdown, _frontMatterPipeline);
-        var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();
-        var frontMatter = yamlBlock is null ? new Frontmatter() : _frontMatterParser.Parse(yamlBlock.Lines.ToString(), path);
-
-        var markdownContent = yamlBlock == null ? markdown : markdown[(yamlBlock.Span.End + 1)..].TrimStart();
-        var markdownDocument = Markdown.Parse(markdownContent, _contentPipeline!);
-        if (_amazonCardTemplateRenderer is not null && markdownDocument.Descendants<AmazonInline>().Any())
-            await AmazonDocumentResolver.ResolveAsync(markdownDocument, _amazonCardTemplateRenderer, _siteOption.AmazonAssociateTag, _amazonProductMetadataResolver);
-        foreach (var link in markdownDocument.Descendants<Markdig.Syntax.Inlines.LinkInline>())
-            if (link.IsImage && !IsExternalUrl(link.Url!)) link.Url = PageModelBase.CombineUrlPath(basePath, link.Url!);
-
-        var oEmbedInlines = markdownDocument.Descendants<OEmbedInline>().ToArray();
-        var amazonFallbackInlines = markdownDocument.Descendants<AmazonInline>().Where(x => !string.IsNullOrEmpty(x.OEmbedFallbackUrl)).ToArray();
-        if (oEmbedInlines.Length != 0 || amazonFallbackInlines.Length != 0)
-        {
-            await EnsureOEmbedProviderCatalogLoadedAsync();
-            if (oEmbedInlines.Length != 0) await OEmbedDocumentResolver.ResolveAsync(markdownDocument, _oEmbedResolver);
-            foreach (var amazonInline in amazonFallbackInlines)
-            {
-                var canonicalUrl = amazonInline.OEmbedFallbackUrl!;
-                var fallbackHtml = await _oEmbedResolver.GetOEmbedHtmlAsync(canonicalUrl);
-                amazonInline.HtmlContent = fallbackHtml == OEmbedHtmlFactory.CreateStandardLink(canonicalUrl) && !string.IsNullOrEmpty(amazonInline.FallbackLinkUrl) ? OEmbedHtmlFactory.CreateStandardLink(amazonInline.FallbackLinkUrl, canonicalUrl) : fallbackHtml;
-            }
-        }
-        writer.GetStringBuilder().Clear();
-        renderer.Render(markdownDocument);
-        writer.Flush();
-        return (writer.ToString(), frontMatter);
-    }
-
-    private static bool IsExternalUrl(string url) => url.StartsWith("/", StringComparison.Ordinal) || url.StartsWith("//", StringComparison.Ordinal) || Uri.TryCreate(url, UriKind.Absolute, out _);
-
+    /// <summary>
+    /// キャッシュを読み込み、本文変換に必要なパイプラインと内部サービスを1回だけ構築する
+    /// </summary>
     private async Task EnsureInitializedAsync()
     {
         if (_isInitialized) return;
+
         await _initializationSemaphore.WaitAsync();
         try
         {
             if (_isInitialized) return;
-            if (!string.IsNullOrEmpty(_oEmbedDir)) await OEmbedCacheStore.LoadAsync(_oEmbedDir, _oEmbedResolver.OEmbedCache);
-            if (_amazonProductMetadataResolver is not null && !string.IsNullOrEmpty(_amazonCacheSettings?.FilePath)) await AmazonProductMetadataCacheStore.LoadAsync(_amazonCacheSettings.FilePath, _amazonProductMetadataResolver.Cache);
-            _contentPipeline = new MarkdownPipelineBuilder().UseYamlFrontMatter().Use(new AmazonAssociateExtension(_siteOption.AmazonAssociateTag)).Use(new OEmbedCardExtension(_oEmbedParser)).UseAdvancedExtensions().Build();
+
+            if (!string.IsNullOrEmpty(_oEmbedDir))
+                await OEmbedCacheStore.LoadAsync(_oEmbedDir, _oEmbedResolver.OEmbedCache);
+
+            if (_amazonProductMetadataResolver is not null && !string.IsNullOrEmpty(_amazonCacheSettings?.FilePath))
+                await AmazonProductMetadataCacheStore.LoadAsync(_amazonCacheSettings.FilePath, _amazonProductMetadataResolver.Cache);
+
+            var contentPipeline = new MarkdownPipelineBuilder()
+                .UseYamlFrontMatter()
+                .Use(new AmazonAssociateExtension(_siteOption.AmazonAssociateTag))
+                .Use(new OEmbedCardExtension(_oEmbedParser))
+                .UseAdvancedExtensions()
+                .Build();
+
+            var embedResolver = new MarkdownEmbedResolver(
+                _oEmbedResolver,
+                _oEmbedProviderCatalogLoader,
+                _oEmbedProviderCatalogInitiallyLoaded);
+
+            _contentProcessor = new MarkdownContentProcessor(
+                _siteOption,
+                _frontMatterParser,
+                _frontMatterPipeline,
+                contentPipeline,
+                _amazonCardTemplateRenderer,
+                _amazonProductMetadataResolver,
+                embedResolver);
+
             _isInitialized = true;
         }
-        finally { _initializationSemaphore.Release(); }
+        finally
+        {
+            _initializationSemaphore.Release();
+        }
     }
 
-    private static HttpClient CreateOEmbedHttpClient() { var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) }; client.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator"); return client; }
-    private static OEmbedResolver CreateDefaultResolver() => new(new OEmbedProviderCatalog([]), CreateOEmbedHttpClient());
-    private async Task EnsureOEmbedProviderCatalogLoadedAsync()
+    /// <summary>
+    /// oEmbed取得用の既定HttpClientを生成する
+    /// </summary>
+    private static HttpClient CreateOEmbedHttpClient()
     {
-        if (_oEmbedProviderCatalogLoaded) return;
-        await _oEmbedProviderSemaphore.WaitAsync();
-        try { if (!_oEmbedProviderCatalogLoaded) { _oEmbedResolver.SetProviderCatalog(await _oEmbedProviderCatalogLoader()); _oEmbedProviderCatalogLoaded = true; } }
-        finally { _oEmbedProviderSemaphore.Release(); }
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("BlogGenerator");
+        return client;
     }
-    private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync() => await new OEmbedProviderCatalogLoader(new OEmbedHttpFetcher(CreateOEmbedHttpClient())).LoadAsync();
+
+    /// <summary>
+    /// provider一覧を空の状態で開始する既定oEmbed resolverを生成する
+    /// </summary>
+    private static OEmbedResolver CreateDefaultResolver() =>
+        new(new OEmbedProviderCatalog([]), CreateOEmbedHttpClient());
+
+    /// <summary>
+    /// 公開oEmbed provider一覧を取得する
+    /// </summary>
+    private static async Task<OEmbedProviderCatalog> LoadDefaultProviderCatalogAsync() =>
+        await new OEmbedProviderCatalogLoader(new OEmbedHttpFetcher(CreateOEmbedHttpClient())).LoadAsync();
 }
