@@ -132,8 +132,17 @@ public class MarkdownProcessor : IMarkdownProcessor
             .Where(filePath => string.Equals(Path.GetExtension(filePath), ".md", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
-        var articles = await Task.WhenAll(
-            filePaths.Select(filePath => ProcessMarkdownFileAsync(inputDir, filePath, baseAbsolutePath)));
+        var articles = new ConcurrentBag<Article>();
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = BuildConcurrency.MarkdownDegreeOfParallelism
+        };
+
+        // 全Markdownを一度にTask化せず、CPU・ファイルI/O・外部HTTP待機が過剰に積み上がらない範囲で処理する
+        await Parallel.ForEachAsync(filePaths, parallelOptions, async (filePath, _) =>
+        {
+            articles.Add(await ProcessMarkdownFileAsync(inputDir, filePath, baseAbsolutePath));
+        });
 
         return articles.OrderByDescending(x => x.Published).ToList();
     }

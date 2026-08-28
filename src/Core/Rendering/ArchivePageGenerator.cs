@@ -14,11 +14,9 @@ internal sealed class ArchivePageGenerator(
     /// <summary>
     /// 公開済み通常記事から年月別のページネーション付きアーカイブを生成する
     /// </summary>
-    public async Task GenerateAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
+    public async Task GenerateAsync(PageGenerationContext context, string outputDir, TrustedHtml sideBarHtml)
     {
-        var regularArticles = PageGenerationContent.GetRegularArticles(articles).ToList();
-        var tagCatalog = PageGenerationContent.CreateTagCatalog(regularArticles);
-        var yearMonthArticles = regularArticles
+        var yearMonthArticles = context.RegularArticles
             .GroupBy(x => x.Published!.Value.ToString("yyyy/MM"))
             .Select(group => new
             {
@@ -27,20 +25,20 @@ internal sealed class ArchivePageGenerator(
             })
             .ToArray();
 
-        foreach (var yearMonthArticle in yearMonthArticles)
+        await Task.WhenAll(yearMonthArticles.Select(yearMonthArticle =>
         {
             var archiveDirectory = Path.Combine(
                 outputDir,
                 yearMonthArticle.YearMonth.Replace("/", Path.DirectorySeparatorChar.ToString()));
 
-            await renderingService.GeneratePagedArticleListPagesAsync(
+            return renderingService.GeneratePagedArticleListPagesAsync(
                 yearMonthArticle.Articles,
                 sideBarHtml,
-                tagCatalog,
+                context.TagCatalog,
                 PageModelBase.CombineUrlPath(siteOption.BaseAbsolutePath, yearMonthArticle.YearMonth),
                 pageNumber => pageNumber == 1
                     ? fileSystemHelper.CombineFilePath(archiveDirectory, "index.html")
                     : fileSystemHelper.CombineFilePath(archiveDirectory, $"{pageNumber}.html"));
-        }
+        }));
     }
 }

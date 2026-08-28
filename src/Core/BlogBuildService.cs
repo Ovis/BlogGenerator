@@ -74,16 +74,14 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
         // ここから先を成果物生成フェーズとする。前回生成された不要ファイルを残さないよう、出力先を空の状態へ戻す
         phaseStopwatch.Restart();
         OutputDirectoryPreparer.Recreate(options.OutputPath);
-        themeProcessor.CopyThemeFilesToOutput(options.ThemePath, options.OutputPath);
-        fileSystemHelper.CopyContentFiles(options.InputPath, options.OutputPath);
+
+        // content側でthemeと同名の静的ファイルを上書きできる従来の順序は維持し、各コピー処理の内部だけを並列化する
+        await themeProcessor.CopyThemeFilesToOutputAsync(options.ThemePath, options.OutputPath);
+        await fileSystemHelper.CopyContentFilesAsync(options.InputPath, options.OutputPath);
         progress.WritePhaseCompleted("Assets", phaseStopwatch.Elapsed);
 
         phaseStopwatch.Restart();
-        var sideBarHtml = await pageGenerator.GenerateSideBarHtmlAsync(published);
-        await pageGenerator.GenerateArticlePagesAsync(published, options.OutputPath, sideBarHtml);
-        await pageGenerator.GenerateIndexPagesAsync(published, options.OutputPath, sideBarHtml);
-        await pageGenerator.GenerateTagPagesAsync(published, options.OutputPath, sideBarHtml);
-        await pageGenerator.GenerateArchivePagesAsync(published, options.OutputPath, sideBarHtml);
+        await pageGenerator.GenerateSitePagesAsync(published, options.OutputPath);
         progress.WritePhaseCompleted("Render", phaseStopwatch.Elapsed, $"published: {published.Count}");
 
         phaseStopwatch.Restart();

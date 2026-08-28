@@ -11,15 +11,13 @@ internal sealed class SideBarGenerator(RazorLightEngine razorLightEngine, SiteOp
     /// <summary>
     /// 記事一覧、タグ一覧、アーカイブ一覧を含むサイドバーHTMLを生成する
     /// </summary>
-    public async Task<TrustedHtml> GenerateAsync(List<Article> articles)
+    public async Task<TrustedHtml> GenerateAsync(PageGenerationContext context)
     {
-        var regularArticles = PageGenerationContent.GetRegularArticles(articles).ToList();
-        var tagCatalog = PageGenerationContent.CreateTagCatalog(regularArticles);
         var html = await razorLightEngine.CompileRenderAsync("SideBar.cshtml", new SideBarModel
         {
             SiteOption = siteOption,
-            Articles = regularArticles,
-            TagCatalog = tagCatalog
+            Articles = context.RegularArticles,
+            TagCatalog = context.TagCatalog
         });
 
         return new TrustedHtml(html);
