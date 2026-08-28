@@ -16,39 +16,39 @@ internal sealed class TagPageGenerator(
     /// <summary>
     /// 公開済み通常記事からタグ一覧とタグ別ページを生成する
     /// </summary>
-    public async Task GenerateAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml)
+    public async Task GenerateAsync(PageGenerationContext context, string outputDir, TrustedHtml sideBarHtml)
     {
-        var regularArticles = PageGenerationContent.GetRegularArticles(articles).ToArray();
-        var tagCatalog = PageGenerationContent.CreateTagCatalog(regularArticles);
         var outputFilePath = fileSystemHelper.CombineFilePath(outputDir, Path.Combine("tags", "index.html"));
         fileSystemHelper.EnsureDirectoryExists(Path.GetDirectoryName(outputFilePath)!);
 
         // タグ一覧は記事一覧とはテンプレート種別が異なるため、ページネーション共通処理には含めない
-        await File.WriteAllTextAsync(
+        var tagIndexTask = File.WriteAllTextAsync(
             outputFilePath,
             await renderingService.RenderLayoutTemplateAsync(new PageModel
             {
                 SiteOption = siteOption,
                 PageType = PageType.Tag,
                 SideBarHtml = sideBarHtml,
-                Articles = regularArticles,
-                TagCatalog = tagCatalog
+                Articles = context.RegularArticles,
+                TagCatalog = context.TagCatalog
             }),
             Encoding.UTF8);
 
-        foreach (var tagEntry in tagCatalog.Entries)
+        var tagPageTasks = context.TagCatalog.Entries.Select(tagEntry =>
         {
             var tagArticles = tagEntry.Articles.OrderByDescending(x => x.Published).ToArray();
             var tagOutputDirectory = Path.Combine(outputDir, "tags", tagEntry.Slug);
 
-            await renderingService.GeneratePagedArticleListPagesAsync(
+            return renderingService.GeneratePagedArticleListPagesAsync(
                 tagArticles,
                 sideBarHtml,
-                tagCatalog,
+                context.TagCatalog,
                 PageModelBase.CombineUrlPath(siteOption.BaseAbsolutePath, "tags", tagEntry.Slug),
                 pageNumber => pageNumber == 1
                     ? Path.Combine(tagOutputDirectory, "index.html")
                     : Path.Combine(tagOutputDirectory, $"{pageNumber}.html"));
-        }
+        });
+
+        await Task.WhenAll(tagPageTasks.Prepend(tagIndexTask));
     }
 }
