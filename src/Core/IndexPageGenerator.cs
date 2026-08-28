@@ -1,3 +1,4 @@
+using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Models;
 
 namespace BlogGenerator.Core;

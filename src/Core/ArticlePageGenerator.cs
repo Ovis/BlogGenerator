@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Enums;
 using BlogGenerator.Models;
 
