@@ -21,9 +21,17 @@ public interface IPageGenerator
     /// 公開対象の記事集合からサイドバー、記事、トップ、タグ、アーカイブをまとめて生成する
     /// </summary>
     /// <remarks>
-    /// 通常ビルドではこのメソッドを使用し、通常記事の抽出やTagCatalog構築を1回だけ行う
+    /// PageGeneratorでは共有コンテキストを利用した最適化版を実装する。
+    /// 既存の独自IPageGenerator実装は従来メソッドを組み合わせる既定実装で互換性を維持する
     /// </remarks>
-    Task GenerateSitePagesAsync(List<Article> articles, string outputDir);
+    async Task GenerateSitePagesAsync(List<Article> articles, string outputDir)
+    {
+        var sideBarHtml = await GenerateSideBarHtmlAsync(articles);
+        await GenerateArticlePagesAsync(articles, outputDir, sideBarHtml);
+        await GenerateIndexPagesAsync(articles, outputDir, sideBarHtml);
+        await GenerateTagPagesAsync(articles, outputDir, sideBarHtml);
+        await GenerateArchivePagesAsync(articles, outputDir, sideBarHtml);
+    }
 
     /// <summary>
     /// 公開対象の記事と固定ページの個別HTMLファイルを生成する
