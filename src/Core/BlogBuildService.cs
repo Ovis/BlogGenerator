@@ -40,7 +40,8 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
             options.ThemePath,
             options.OEmbedCachePath,
             options.AmazonCachePath,
-            timeProvider.LocalTimeZone);
+            timeProvider.LocalTimeZone,
+            buildContext.BuildTime);
 
         var markdownProcessor = serviceProvider.GetRequiredService<IMarkdownProcessor>();
         var themeProcessor = serviceProvider.GetRequiredService<IThemeProcessor>();
