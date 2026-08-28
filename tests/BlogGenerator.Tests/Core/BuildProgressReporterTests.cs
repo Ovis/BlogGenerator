@@ -39,6 +39,29 @@ public class BuildProgressReporterTests
     }
 
     [Test]
+    public void 外部埋め込み解決の計測結果を出力する()
+    {
+        using var writer = new StringWriter();
+        var reporter = new BuildProgressReporter(writer);
+        var metrics = new ExternalResolutionMetrics(
+            OEmbedCacheHits: 20,
+            OEmbedCacheMisses: 3,
+            OEmbedHttpRequests: 5,
+            OEmbedHttpElapsed: TimeSpan.FromMilliseconds(1250),
+            AmazonCacheHits: 8,
+            AmazonCacheMisses: 4,
+            AmazonFetchElapsed: TimeSpan.FromMilliseconds(8125));
+
+        reporter.WriteExternalResolutionMetrics(metrics);
+
+        Assert.That(
+            writer.ToString(),
+            Is.EqualTo(
+                "[oEmbed] cache hits: 20, misses: 3, HTTP requests: 5, HTTP cumulative: 1.250s" + Environment.NewLine +
+                "[Amazon] cache hits: 8, misses: 4, HTTP requests: 4, fetch cumulative: 8.125s" + Environment.NewLine));
+    }
+
+    [Test]
     public void 補足情報がないフェーズとビルド全体を簡潔に出力する()
     {
         using var writer = new StringWriter();
