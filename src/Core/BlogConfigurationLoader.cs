@@ -3,13 +3,22 @@ using Microsoft.Extensions.Configuration;
 
 namespace BlogGenerator.Core;
 
+/// <summary>
+/// BlogGeneratorで使用する設定ファイルと環境変数を読み込み、設定モデルを構築する
+/// </summary>
 internal static class BlogConfigurationLoader
 {
+    /// <summary>
+    /// ユーザー設定、アプリ設定、明示指定された設定、環境変数の順に設定を重ねて読み込む
+    /// </summary>
+    /// <param name="configFile">コマンドラインから明示指定された設定ファイル</param>
+    /// <returns>サイト設定とフィード設定</returns>
     public static (SiteOption SiteOption, FeedOption FeedOption) Load(FileInfo? configFile)
     {
         var configBuilder = new ConfigurationBuilder();
         var userConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".bloggen", "config.json");
 
+        // 後から追加された設定ソースほど優先されるため、この順序自体が設定の優先順位を表す
         if (File.Exists(userConfigPath)) configBuilder.AddJsonFile(userConfigPath, optional: true, reloadOnChange: true);
         if (File.Exists("appsettings.json")) configBuilder.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
         if (File.Exists("appsettings.Development.json")) configBuilder.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
@@ -34,6 +43,9 @@ internal static class BlogConfigurationLoader
         return (siteOption, feedOption);
     }
 
+    /// <summary>
+    /// 設定モデルに値がない場合だけ、従来形式の環境変数から値を取得する
+    /// </summary>
     private static string GetEnvironmentFallback(string? configuredValue, string environmentVariableName) =>
         string.IsNullOrEmpty(configuredValue)
             ? Environment.GetEnvironmentVariable(environmentVariableName) ?? string.Empty
