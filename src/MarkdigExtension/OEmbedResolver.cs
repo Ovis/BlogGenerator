@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace BlogGenerator.MarkdigExtension;
 
+/// <summary>
+/// URLをoEmbed、discovery、OGPの順で解決し、埋め込みHTMLを返す
+/// </summary>
 public class OEmbedResolver
 {
     private static readonly TimeSpan SuccessTtl = TimeSpan.FromDays(180);
@@ -12,6 +15,7 @@ public class OEmbedResolver
     private OEmbedProviderCatalog _oEmbedProviderCatalog;
     private readonly OEmbedEndpointResolver _oEmbedEndpointResolver;
     private readonly OEmbedSiteMetaDataExtractor _oEmbedSiteMetaDataExtractor;
+    private readonly IOgpCardTemplateRenderer _ogpCardTemplateRenderer;
     private readonly Func<DateTimeOffset> _utcNowProvider;
     private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _inFlightResolutions = [];
     private long _cacheHits;
@@ -21,12 +25,14 @@ public class OEmbedResolver
         OEmbedProviderCatalog oEmbedProviderCatalog,
         HttpClient httpClient,
         ConcurrentDictionary<string, OEmbedCacheEntry>? oEmbedCache = null,
-        Func<DateTimeOffset>? utcNowProvider = null)
+        Func<DateTimeOffset>? utcNowProvider = null,
+        IOgpCardTemplateRenderer? ogpCardTemplateRenderer = null)
         : this(
             oEmbedProviderCatalog,
             new OEmbedHttpFetcher(httpClient),
             oEmbedCache,
-            utcNowProvider)
+            utcNowProvider,
+            ogpCardTemplateRenderer)
     {
     }
 
@@ -34,13 +40,15 @@ public class OEmbedResolver
         OEmbedProviderCatalog oEmbedProviderCatalog,
         OEmbedHttpFetcher fetcher,
         ConcurrentDictionary<string, OEmbedCacheEntry>? oEmbedCache = null,
-        Func<DateTimeOffset>? utcNowProvider = null)
+        Func<DateTimeOffset>? utcNowProvider = null,
+        IOgpCardTemplateRenderer? ogpCardTemplateRenderer = null)
         : this(
             oEmbedProviderCatalog,
             new OEmbedEndpointResolver(fetcher),
             new OEmbedSiteMetaDataExtractor(fetcher),
             oEmbedCache,
-            utcNowProvider)
+            utcNowProvider,
+            ogpCardTemplateRenderer)
     {
     }
 
@@ -49,12 +57,14 @@ public class OEmbedResolver
         OEmbedEndpointResolver oEmbedEndpointResolver,
         OEmbedSiteMetaDataExtractor oEmbedSiteMetaDataExtractor,
         ConcurrentDictionary<string, OEmbedCacheEntry>? oEmbedCache = null,
-        Func<DateTimeOffset>? utcNowProvider = null)
+        Func<DateTimeOffset>? utcNowProvider = null,
+        IOgpCardTemplateRenderer? ogpCardTemplateRenderer = null)
     {
         _oEmbedProviderCatalog = oEmbedProviderCatalog;
         _oEmbedEndpointResolver = oEmbedEndpointResolver;
         _oEmbedSiteMetaDataExtractor = oEmbedSiteMetaDataExtractor;
         _utcNowProvider = utcNowProvider ?? (() => DateTimeOffset.UtcNow);
+        _ogpCardTemplateRenderer = ogpCardTemplateRenderer ?? new OgpCardTemplateRenderer();
         OEmbedCache = oEmbedCache ?? [];
     }
 
@@ -77,13 +87,14 @@ public class OEmbedResolver
     public async ValueTask<string> GetOEmbedHtmlAsync(string url)
     {
         var now = _utcNowProvider();
-        if (TryGetCachedHtml(url, now, out var cachedHtml))
+        var cached = await TryGetCachedHtmlAsync(url, now);
+        if (cached.Found)
         {
             Interlocked.Increment(ref _cacheHits);
-            return cachedHtml;
+            return cached.Html;
         }
 
-        // 期限切れエントリも再取得が必要なためmissとして扱う
+        // 期限切れエントリと旧形式OGPカードは再取得が必要なためmissとして扱う
         Interlocked.Increment(ref _cacheMisses);
 
         // Markdownは複数ファイルを並列処理するため、同じURLが同時に現れると全呼び出しがcache missになり得る
@@ -112,25 +123,36 @@ public class OEmbedResolver
         var now = _utcNowProvider();
 
         // 最初のcache missからin-flight登録までの間に別Taskが解決を完了した場合は外部アクセスを省略する
-        if (TryGetCachedHtml(url, now, out var cachedHtml))
+        var cached = await TryGetCachedHtmlAsync(url, now);
+        if (cached.Found)
         {
-            return cachedHtml;
+            return cached.Html;
         }
 
         OEmbedCache.TryGetValue(url, out var cachedResult);
         var resolution = await ResolveOEmbedAsync(url);
         if (resolution.IsSuccess)
         {
-            var refreshedEntry = OEmbedCacheEntry.CreateSuccess(resolution.HtmlContent, now, SuccessTtl);
+            OEmbedCacheEntry refreshedEntry;
+            if (resolution.OgpCard is not null)
+            {
+                // OGP fallbackは最終HTMLではなく表示モデルを保存し、テーマ変更時にも再描画できるようにする
+                refreshedEntry = OEmbedCacheEntry.CreateOgpSuccess(resolution.OgpCard, now, SuccessTtl);
+            }
+            else
+            {
+                refreshedEntry = OEmbedCacheEntry.CreateSuccess(resolution.HtmlContent, now, SuccessTtl);
+            }
+
             OEmbedCache[url] = refreshedEntry;
-            return refreshedEntry.HtmlContent;
+            return await RenderCacheEntryAsync(refreshedEntry);
         }
 
         if (cachedResult is not null && cachedResult.Status == OEmbedCacheEntryStatus.Success)
         {
             // 期限切れ後の再取得に失敗しても、古い成功結果を捨てると既存記事の表示が崩れるため保持する
             OEmbedCache[url] = cachedResult.MarkRefreshFailure(now, FailureTtl, resolution.ErrorSummary);
-            return cachedResult.HtmlContent;
+            return await RenderCacheEntryAsync(cachedResult);
         }
 
         var failedEntry = OEmbedCacheEntry.CreateFailure(resolution.HtmlContent, now, FailureTtl, resolution.ErrorSummary);
@@ -141,17 +163,44 @@ public class OEmbedResolver
     /// <summary>
     /// TTLまたは再試行抑止期間が有効なキャッシュからHTMLを取得する
     /// </summary>
-    private bool TryGetCachedHtml(string url, DateTimeOffset now, out string html)
+    private async Task<(bool Found, string Html)> TryGetCachedHtmlAsync(string url, DateTimeOffset now)
     {
-        if (OEmbedCache.TryGetValue(url, out var cachedResult) &&
-            (cachedResult.IsFresh(now) || cachedResult.ShouldSkipRetry(now)))
+        if (!OEmbedCache.TryGetValue(url, out var cachedResult))
         {
-            html = cachedResult.HtmlContent;
-            return true;
+            return (false, string.Empty);
         }
 
-        html = string.Empty;
-        return false;
+        if (cachedResult.IsFresh(now))
+        {
+            // 旧bcard HTMLは一度だけ再取得し、テーマで再描画できるモデル形式へ移行する
+            if (cachedResult.IsLegacyOgpHtml)
+            {
+                return (false, string.Empty);
+            }
+
+            return (true, await RenderCacheEntryAsync(cachedResult));
+        }
+
+        if (cachedResult.ShouldSkipRetry(now))
+        {
+            return (true, await RenderCacheEntryAsync(cachedResult));
+        }
+
+        return (false, string.Empty);
+    }
+
+    /// <summary>
+    /// キャッシュエントリを現在のテーマに応じた最終HTMLへ変換する
+    /// </summary>
+    private async Task<string> RenderCacheEntryAsync(OEmbedCacheEntry entry)
+    {
+        if (entry.OgpCard is null)
+        {
+            return entry.HtmlContent;
+        }
+
+        var cardHtml = await _ogpCardTemplateRenderer.RenderAsync(entry.OgpCard);
+        return OEmbedHtmlFactory.WrapInContainer(cardHtml);
     }
 
     private async Task<OEmbedResolutionResult> ResolveOEmbedAsync(string url)
@@ -200,11 +249,11 @@ public class OEmbedResolver
             }
         }
 
-        if (!string.IsNullOrEmpty(metaData.OgTitle))
+        if (!string.IsNullOrEmpty(metaData.OgTitle) && OgpCardModelFactory.TryCreate(url, metaData, out var ogpCard))
         {
             return new OEmbedResolutionResult
             {
-                HtmlContent = OEmbedHtmlFactory.WrapInContainer(OEmbedHtmlFactory.CreateOgpCard(url, metaData)),
+                OgpCard = ogpCard,
                 IsSuccess = true
             };
         }
