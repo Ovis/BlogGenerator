@@ -10,13 +10,5 @@ public sealed record ExternalResolutionMetrics(
     TimeSpan OEmbedHttpElapsed,
     long AmazonCacheHits,
     long AmazonCacheMisses,
-    TimeSpan AmazonFetchElapsed)
-{
-    /// <summary>
-    /// Amazon商品ページへのHTTP取得回数を返す
-    /// </summary>
-    /// <remarks>
-    /// Amazon resolverはキャッシュmissごとに商品ページを1回取得するため、miss件数とHTTP取得件数は一致する
-    /// </remarks>
-    public long AmazonHttpRequests => AmazonCacheMisses;
-}
+    long AmazonHttpRequests,
+    TimeSpan AmazonFetchElapsed);
