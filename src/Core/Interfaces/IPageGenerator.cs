@@ -18,6 +18,14 @@ public interface IPageGenerator
     Task ValidateArticlePageAsync(Article article, List<Article> publishedArticles, TrustedHtml sideBarHtml);
 
     /// <summary>
+    /// 公開対象の記事集合からサイドバー、記事、トップ、タグ、アーカイブをまとめて生成する
+    /// </summary>
+    /// <remarks>
+    /// 通常ビルドではこのメソッドを使用し、通常記事の抽出やTagCatalog構築を1回だけ行う
+    /// </remarks>
+    Task GenerateSitePagesAsync(List<Article> articles, string outputDir);
+
+    /// <summary>
     /// 公開対象の記事と固定ページの個別HTMLファイルを生成する
     /// </summary>
     Task GenerateArticlePagesAsync(List<Article> articles, string outputDir, TrustedHtml sideBarHtml);
