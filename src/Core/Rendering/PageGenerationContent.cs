@@ -1,6 +1,6 @@
 using BlogGenerator.Models;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// ページ生成で共通して使用する記事選別とタグカタログ生成を提供する

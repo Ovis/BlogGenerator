@@ -3,7 +3,7 @@ using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Enums;
 using BlogGenerator.Models;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// タグ一覧ページとタグ別の記事一覧ページを生成する

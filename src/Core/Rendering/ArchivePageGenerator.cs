@@ -1,7 +1,7 @@
 using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Models;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// 公開済み記事を年月単位に分類し、アーカイブ一覧ページを生成する

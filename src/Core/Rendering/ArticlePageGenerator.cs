@@ -4,7 +4,7 @@ using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Enums;
 using BlogGenerator.Models;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// 記事ページと固定ページの検証およびHTML生成を担当する

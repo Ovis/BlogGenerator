@@ -1,7 +1,7 @@
 using BlogGenerator.Models;
 using RazorLight;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// 公開済み通常記事からサイドバーHTMLを生成する

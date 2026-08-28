@@ -1,7 +1,7 @@
 using BlogGenerator.MarkdigExtension;
 using Markdig.Syntax;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Content;
 
 /// <summary>
 /// Markdown本文中のoEmbed記法とAmazonフォールバックを解決する

@@ -1,7 +1,7 @@
 using BlogGenerator.Core.Interfaces;
 using BlogGenerator.Models;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// サイトトップの記事一覧ページを生成する

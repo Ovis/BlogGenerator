@@ -1,3 +1,4 @@
+using BlogGenerator.Core;
 using BlogGenerator.MarkdigExtension;
 using BlogGenerator.Models;
 using Markdig;
@@ -6,7 +7,7 @@ using Markdig.Renderers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Content;
 
 /// <summary>
 /// 1つのMarkdown文書をfrontmatterと本文HTMLへ変換する

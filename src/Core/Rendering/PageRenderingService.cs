@@ -4,7 +4,7 @@ using BlogGenerator.Enums;
 using BlogGenerator.Models;
 using RazorLight;
 
-namespace BlogGenerator.Core;
+namespace BlogGenerator.Core.Rendering;
 
 /// <summary>
 /// Razorテンプレートのレンダリングと、ページネーション付き一覧ページの共通出力処理を提供する
