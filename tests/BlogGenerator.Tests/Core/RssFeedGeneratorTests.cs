@@ -90,4 +90,45 @@ public class RssFeedGeneratorTests
             Assert.That(atomXml, Does.Not.Contain("Draft article"));
         });
     }
+
+    [Test]
+    public async Task フィード更新時刻には指定したTimeProviderのローカル時刻を使用する()
+    {
+        var timeZone = TimeZoneInfo.CreateCustomTimeZone("Test/JST", TimeSpan.FromHours(9), "Test/JST", "Test/JST");
+        var expectedTime = new DateTimeOffset(2026, 8, 28, 20, 30, 0, TimeSpan.FromHours(9));
+        var generator = new RssFeedGenerator(
+            new SiteOption
+            {
+                SiteName = "BlogGenerator Test",
+                SiteDescription = "Test Description",
+                SiteUrl = "https://example.com/blog/"
+            },
+            new FeedOption(),
+            new FileSystemHelper(),
+            new TestTimeProvider(expectedTime, timeZone));
+
+        var outputDir = Path.Combine(_testRootPath, "output-time");
+        Directory.CreateDirectory(outputDir);
+
+        await generator.GenerateRssAndAtomFeedsAsync([], outputDir);
+
+        var rssDocument = XDocument.Load(Path.Combine(outputDir, "feed.rss"));
+        var atomDocument = XDocument.Load(Path.Combine(outputDir, "feed.atom"));
+        var rssUpdated = DateTimeOffset.Parse(rssDocument.Root!.Element("channel")!.Element("lastBuildDate")!.Value);
+        var atomNamespace = XNamespace.Get("http://www.w3.org/2005/Atom");
+        var atomUpdated = DateTimeOffset.Parse(atomDocument.Root!.Element(atomNamespace + "updated")!.Value);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(rssUpdated, Is.EqualTo(expectedTime));
+            Assert.That(atomUpdated, Is.EqualTo(expectedTime));
+        });
+    }
+
+    private sealed class TestTimeProvider(DateTimeOffset currentTime, TimeZoneInfo localTimeZone) : TimeProvider
+    {
+        public override TimeZoneInfo LocalTimeZone => localTimeZone;
+
+        public override DateTimeOffset GetUtcNow() => currentTime.ToUniversalTime();
+    }
 }

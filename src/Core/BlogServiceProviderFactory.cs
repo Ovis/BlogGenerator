@@ -20,7 +20,8 @@ internal static class BlogServiceProviderFactory
         string themePath,
         string? oEmbedCachePath,
         string? amazonCachePath,
-        TimeZoneInfo timeZone)
+        TimeZoneInfo timeZone,
+        DateTimeOffset buildTime)
     {
         var services = new ServiceCollection();
 
@@ -42,6 +43,9 @@ internal static class BlogServiceProviderFactory
         services.AddSingleton(_ => oEmbedCachePath ?? string.Empty);
         services.AddSingleton(new AmazonProductMetadataCacheSettings(amazonCachePath ?? string.Empty));
         services.AddSingleton(timeZone);
+
+        // 現在時刻へ依存する処理は、ビルド開始時に固定した同一時刻を参照する
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(buildTime, timeZone));
 
         services.AddSingleton<IFileSystemHelper, FileSystemHelper>();
         services.AddSingleton<IThemeProcessor, ThemeProcessor>();
