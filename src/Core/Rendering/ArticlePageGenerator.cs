@@ -102,7 +102,7 @@ internal sealed class ArticlePageGenerator(
             .GroupBy(path => Path.GetFileNameWithoutExtension(path), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 group => group.Key,
-                group => group.Select(Path.GetFileName).OrderBy(name => name, StringComparer.Ordinal).ToArray()!,
+                group => group.Select(path => Path.GetFileName(path)!).OrderBy(name => name, StringComparer.Ordinal).ToArray(),
                 StringComparer.OrdinalIgnoreCase);
     }
 }
