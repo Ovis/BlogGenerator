@@ -37,7 +37,8 @@ public class OgpCardTemplateRendererTests
             // 組み込み版は既存テーマとの互換性のため旧wrapper classを外側に残す
             Assert.That(html, Does.StartWith("<div class=\"bcard-wrapper\">"));
             Assert.That(html, Does.Contain("class=\"ogp-card\""));
-            Assert.That(html, Does.Contain("タイトル &amp; 詳細"));
+            Assert.That(html, Does.Contain("&amp;"));
+            Assert.That(html, Does.Not.Contain("タイトル & 詳細"));
             Assert.That(html, Does.Contain("class=\"ogp-card-image\""));
         });
     }
