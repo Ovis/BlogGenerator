@@ -3,14 +3,39 @@ using Hnx8.ReadJEnc;
 
 namespace BlogGenerator.MarkdigExtension;
 
-public class OEmbedHttpFetcher(HttpClient httpClient)
+public class OEmbedHttpFetcher
 {
-    private readonly HttpClient _httpClient = httpClient;
+    private readonly HttpClient _httpClient;
+    private readonly ExternalRequestMetrics? _requestMetrics;
+
+    public OEmbedHttpFetcher(HttpClient httpClient)
+        : this(httpClient, null)
+    {
+    }
+
+    /// <summary>
+    /// HTTP取得の計測先を指定してoEmbed fetcherを生成する
+    /// </summary>
+    /// <param name="httpClient">HTTP取得に使用するクライアント</param>
+    /// <param name="requestMetrics">取得件数と累積時間の記録先</param>
+    internal OEmbedHttpFetcher(HttpClient httpClient, ExternalRequestMetrics? requestMetrics)
+    {
+        _httpClient = httpClient;
+        _requestMetrics = requestMetrics;
+    }
 
     /// <summary>
     /// oEmbed関連のHTTP取得を共通化する
     /// </summary>
-    public async Task<OEmbedFetchResult> FetchAsync(string url)
+    public Task<OEmbedFetchResult> FetchAsync(string url) =>
+        _requestMetrics is null
+            ? FetchCoreAsync(url)
+            : _requestMetrics.MeasureAsync(() => FetchCoreAsync(url));
+
+    /// <summary>
+    /// HTTP取得本体を実行する
+    /// </summary>
+    private async Task<OEmbedFetchResult> FetchCoreAsync(string url)
     {
         try
         {
