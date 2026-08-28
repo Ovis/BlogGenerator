@@ -28,7 +28,6 @@ internal sealed class ScheduledContentValidator(IPageGenerator pageGenerator)
             try
             {
                 await pageGenerator.ValidateArticlePageAsync(scheduled, published, validationSideBar);
-                Console.WriteLine($"Scheduled content validated: {scheduled.RootRelativePath} (Published: {scheduled.Published:yyyy-MM-dd HH:mm:ss zzz})");
             }
             catch (Exception ex)
             {
