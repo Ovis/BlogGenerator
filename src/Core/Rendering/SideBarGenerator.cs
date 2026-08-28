@@ -9,7 +9,7 @@ namespace BlogGenerator.Core.Rendering;
 internal sealed class SideBarGenerator(RazorLightEngine razorLightEngine, SiteOption siteOption)
 {
     /// <summary>
-    /// 記事一覧とタグカタログを使用してサイドバーをレンダリングする
+    /// 記事一覧、タグ一覧、アーカイブ一覧を含むサイドバーHTMLを生成する
     /// </summary>
     public async Task<TrustedHtml> GenerateAsync(List<Article> articles)
     {
