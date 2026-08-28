@@ -75,10 +75,9 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
         phaseStopwatch.Restart();
         OutputDirectoryPreparer.Recreate(options.OutputPath);
 
-        // themeとcontentは互いに独立しているため同時にコピーし、各処理内でもI/O並列度を制限する
-        await Task.WhenAll(
-            themeProcessor.CopyThemeFilesToOutputAsync(options.ThemePath, options.OutputPath),
-            fileSystemHelper.CopyContentFilesAsync(options.InputPath, options.OutputPath));
+        // content側でthemeと同名の静的ファイルを上書きできる従来の順序は維持し、各コピー処理の内部だけを並列化する
+        await themeProcessor.CopyThemeFilesToOutputAsync(options.ThemePath, options.OutputPath);
+        await fileSystemHelper.CopyContentFilesAsync(options.InputPath, options.OutputPath);
         progress.WritePhaseCompleted("Assets", phaseStopwatch.Elapsed);
 
         phaseStopwatch.Restart();
