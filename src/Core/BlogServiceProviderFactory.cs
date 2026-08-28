@@ -32,6 +32,8 @@ internal static class BlogServiceProviderFactory
             .Build());
         services.AddSingleton<IAmazonCardTemplateRenderer>(sp =>
             new AmazonCardTemplateRenderer(sp.GetRequiredService<RazorLightEngine>(), themePath));
+        services.AddSingleton<IOgpCardTemplateRenderer>(sp =>
+            new OgpCardTemplateRenderer(sp.GetRequiredService<RazorLightEngine>(), themePath));
         services.AddSingleton(_ => new AmazonProductMetadataResolver(
             new AmazonProductHttpFetcher(AmazonProductHttpFetcher.CreateHttpClient()),
             new AmazonProductPageParser()));
