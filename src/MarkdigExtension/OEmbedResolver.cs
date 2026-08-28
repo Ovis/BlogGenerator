@@ -13,6 +13,7 @@ public class OEmbedResolver
     private readonly OEmbedEndpointResolver _oEmbedEndpointResolver;
     private readonly OEmbedSiteMetaDataExtractor _oEmbedSiteMetaDataExtractor;
     private readonly Func<DateTimeOffset> _utcNowProvider;
+    private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _inFlightResolutions = [];
     private long _cacheHits;
     private long _cacheMisses;
 
@@ -76,18 +77,47 @@ public class OEmbedResolver
     public async ValueTask<string> GetOEmbedHtmlAsync(string url)
     {
         var now = _utcNowProvider();
-
-        if (OEmbedCache.TryGetValue(url, out var cachedResult))
+        if (TryGetCachedHtml(url, now, out var cachedHtml))
         {
-            if (cachedResult.IsFresh(now) || cachedResult.ShouldSkipRetry(now))
-            {
-                Interlocked.Increment(ref _cacheHits);
-                return cachedResult.HtmlContent;
-            }
+            Interlocked.Increment(ref _cacheHits);
+            return cachedHtml;
         }
 
         // 期限切れエントリも再取得が必要なためmissとして扱う
         Interlocked.Increment(ref _cacheMisses);
+
+        // Markdownは複数ファイルを並列処理するため、同じURLが同時に現れると全呼び出しがcache missになり得る
+        // URL単位で解決Taskを共有し、provider APIや対象ページへの不要な重複アクセスを防ぐ
+        var candidate = new Lazy<Task<string>>(
+            () => ResolveAndCacheAsync(url),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        var resolution = _inFlightResolutions.GetOrAdd(url, candidate);
+
+        try
+        {
+            return await resolution.Value;
+        }
+        finally
+        {
+            // 完了したTaskは保持せず、以後は通常のTTLキャッシュ判定へ戻す
+            _inFlightResolutions.TryRemove(new KeyValuePair<string, Lazy<Task<string>>>(url, resolution));
+        }
+    }
+
+    /// <summary>
+    /// キャッシュを再確認したうえでURLを解決し、結果をキャッシュへ保存する
+    /// </summary>
+    private async Task<string> ResolveAndCacheAsync(string url)
+    {
+        var now = _utcNowProvider();
+
+        // 最初のcache missからin-flight登録までの間に別Taskが解決を完了した場合は外部アクセスを省略する
+        if (TryGetCachedHtml(url, now, out var cachedHtml))
+        {
+            return cachedHtml;
+        }
+
+        OEmbedCache.TryGetValue(url, out var cachedResult);
         var resolution = await ResolveOEmbedAsync(url);
         if (resolution.IsSuccess)
         {
@@ -106,6 +136,22 @@ public class OEmbedResolver
         var failedEntry = OEmbedCacheEntry.CreateFailure(resolution.HtmlContent, now, FailureTtl, resolution.ErrorSummary);
         OEmbedCache[url] = failedEntry;
         return failedEntry.HtmlContent;
+    }
+
+    /// <summary>
+    /// TTLまたは再試行抑止期間が有効なキャッシュからHTMLを取得する
+    /// </summary>
+    private bool TryGetCachedHtml(string url, DateTimeOffset now, out string html)
+    {
+        if (OEmbedCache.TryGetValue(url, out var cachedResult) &&
+            (cachedResult.IsFresh(now) || cachedResult.ShouldSkipRetry(now)))
+        {
+            html = cachedResult.HtmlContent;
+            return true;
+        }
+
+        html = string.Empty;
+        return false;
     }
 
     private async Task<OEmbedResolutionResult> ResolveOEmbedAsync(string url)

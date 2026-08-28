@@ -17,8 +17,10 @@ public sealed class AmazonProductMetadataResolver
     private readonly IAmazonProductPageFetcher _fetcher;
     private readonly AmazonProductPageParser _parser;
     private readonly Func<DateTimeOffset> _utcNowProvider;
+    private readonly ConcurrentDictionary<string, Lazy<Task<AmazonProductMetadata?>>> _inFlightResolutions = [];
     private long _cacheHits;
     private long _cacheMisses;
+    private long _httpRequests;
     private long _fetchElapsedTicks;
 
     public AmazonProductMetadataResolver(
@@ -38,10 +40,11 @@ public sealed class AmazonProductMetadataResolver
     /// <summary>
     /// 現在までのキャッシュ利用状況と商品ページ取得の累積時間を取得する
     /// </summary>
-    internal (long CacheHits, long CacheMisses, TimeSpan FetchElapsed) GetMetrics() =>
+    internal (long CacheHits, long CacheMisses, long HttpRequests, TimeSpan FetchElapsed) GetMetrics() =>
         (
             Interlocked.Read(ref _cacheHits),
             Interlocked.Read(ref _cacheMisses),
+            Interlocked.Read(ref _httpRequests),
             TimeSpan.FromTicks(Interlocked.Read(ref _fetchElapsedTicks)));
 
     /// <summary>
@@ -51,15 +54,48 @@ public sealed class AmazonProductMetadataResolver
     {
         var normalizedAsin = asin.ToUpperInvariant();
         var now = _utcNowProvider();
-        if (Cache.TryGetValue(normalizedAsin, out var cachedEntry) &&
-            (cachedEntry.IsFresh(now) || cachedEntry.ShouldSkipRetry(now)))
+        if (TryGetCachedMetadata(normalizedAsin, now, out var cachedMetadata))
         {
             Interlocked.Increment(ref _cacheHits);
-            return cachedEntry.ToMetadata();
+            return cachedMetadata;
         }
 
-        // Amazon商品ページはcache missごとに1回取得するため、miss件数はHTTP取得件数としても利用できる
         Interlocked.Increment(ref _cacheMisses);
+
+        // Markdownは複数ファイルを並列処理するため、同じASINが同時に現れると全呼び出しがcache missになり得る
+        // ASIN単位で解決Taskを共有し、Amazonへの不要な重複アクセスを防ぐ
+        var candidate = new Lazy<Task<AmazonProductMetadata?>>(
+            () => ResolveAndCacheAsync(normalizedAsin),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        var resolution = _inFlightResolutions.GetOrAdd(normalizedAsin, candidate);
+
+        try
+        {
+            return await resolution.Value;
+        }
+        finally
+        {
+            // 完了したTaskは保持せず、以後は通常のTTLキャッシュ判定へ戻す
+            _inFlightResolutions.TryRemove(new KeyValuePair<string, Lazy<Task<AmazonProductMetadata?>>>(normalizedAsin, resolution));
+        }
+    }
+
+    /// <summary>
+    /// キャッシュを再確認したうえでAmazon商品ページを取得し、結果をキャッシュへ保存する
+    /// </summary>
+    private async Task<AmazonProductMetadata?> ResolveAndCacheAsync(string normalizedAsin)
+    {
+        var now = _utcNowProvider();
+
+        // 最初のcache missからin-flight登録までの間に別Taskが取得を完了した場合はHTTPアクセスを省略する
+        if (TryGetCachedMetadata(normalizedAsin, now, out var cachedMetadata))
+        {
+            return cachedMetadata;
+        }
+
+        Cache.TryGetValue(normalizedAsin, out var cachedEntry);
+
+        Interlocked.Increment(ref _httpRequests);
         var fetchStopwatch = Stopwatch.StartNew();
         AmazonProductFetchResult fetchResult;
         try
@@ -101,6 +137,22 @@ public sealed class AmazonProductMetadataResolver
             failureTtl,
             resolution.ErrorSummary);
         return null;
+    }
+
+    /// <summary>
+    /// TTLまたは再試行抑止期間が有効なキャッシュから商品情報を取得する
+    /// </summary>
+    private bool TryGetCachedMetadata(string normalizedAsin, DateTimeOffset now, out AmazonProductMetadata? metadata)
+    {
+        if (Cache.TryGetValue(normalizedAsin, out var cachedEntry) &&
+            (cachedEntry.IsFresh(now) || cachedEntry.ShouldSkipRetry(now)))
+        {
+            metadata = cachedEntry.ToMetadata();
+            return true;
+        }
+
+        metadata = null;
+        return false;
     }
 
     private AmazonProductMetadataResolution ResolveFetchResult(AmazonProductFetchResult fetchResult)

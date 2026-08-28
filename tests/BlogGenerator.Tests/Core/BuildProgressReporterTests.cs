@@ -50,6 +50,7 @@ public class BuildProgressReporterTests
             OEmbedHttpElapsed: TimeSpan.FromMilliseconds(1250),
             AmazonCacheHits: 8,
             AmazonCacheMisses: 4,
+            AmazonHttpRequests: 3,
             AmazonFetchElapsed: TimeSpan.FromMilliseconds(8125));
 
         reporter.WriteExternalResolutionMetrics(metrics);
@@ -58,7 +59,7 @@ public class BuildProgressReporterTests
             writer.ToString(),
             Is.EqualTo(
                 "[oEmbed] cache hits: 20, misses: 3, HTTP requests: 5, HTTP cumulative: 1.250s" + Environment.NewLine +
-                "[Amazon] cache hits: 8, misses: 4, HTTP requests: 4, fetch cumulative: 8.125s" + Environment.NewLine));
+                "[Amazon] cache hits: 8, misses: 4, HTTP requests: 3, fetch cumulative: 8.125s" + Environment.NewLine));
     }
 
     [Test]
