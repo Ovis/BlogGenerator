@@ -6,8 +6,14 @@ using RazorLight;
 
 namespace BlogGenerator.Core;
 
+/// <summary>
+/// 1回のサイトビルドで使用する依存関係を登録し、サービスプロバイダーを構築する
+/// </summary>
 internal static class BlogServiceProviderFactory
 {
+    /// <summary>
+    /// テーマやサイト設定、キャッシュ設定を含むビルド用サービスプロバイダーを生成する
+    /// </summary>
     public static ServiceProvider Create(
         SiteOption siteOption,
         FeedOption feedOption,
@@ -18,6 +24,7 @@ internal static class BlogServiceProviderFactory
     {
         var services = new ServiceCollection();
 
+        // RazorLightはテーマディレクトリをテンプレートのルートとして扱い、ビルド中はコンパイル結果を再利用する
         services.AddSingleton<RazorLightEngine>(_ => new RazorLightEngineBuilder()
             .UseFileSystemProject(themePath)
             .UseMemoryCachingProvider()
@@ -28,6 +35,7 @@ internal static class BlogServiceProviderFactory
             new AmazonProductHttpFetcher(AmazonProductHttpFetcher.CreateHttpClient()),
             new AmazonProductPageParser()));
 
+        // コマンドラインと設定ファイルから確定した値は、ビルド全体で同一インスタンスを共有する
         services.AddSingleton(siteOption);
         services.AddSingleton(feedOption);
         services.AddSingleton(new ThemeSettings(themePath));
