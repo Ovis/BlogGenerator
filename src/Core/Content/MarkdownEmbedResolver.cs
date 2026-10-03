@@ -37,11 +37,19 @@ internal sealed class MarkdownEmbedResolver(
             var canonicalUrl = amazonInline.OEmbedFallbackUrl!;
             var fallbackHtml = await oEmbedResolver.GetOEmbedHtmlAsync(canonicalUrl);
 
-            // Amazon側のURLで通常リンクへフォールバックした場合は、可能なら元リンクを表示先として維持する
-            amazonInline.HtmlContent = fallbackHtml == OEmbedHtmlFactory.CreateStandardLink(canonicalUrl)
-                && !string.IsNullOrEmpty(amazonInline.FallbackLinkUrl)
-                    ? OEmbedHtmlFactory.CreateStandardLink(amazonInline.FallbackLinkUrl, canonicalUrl)
-                    : fallbackHtml;
+            // oEmbedの通常リンクはコンテナ付き。旧キャッシュの裸のリンクにも対応し、
+            // 共有キャッシュを変更せず、描画時にアフィリエイトURLへ差し替える。
+            var standardLink = OEmbedHtmlFactory.CreateStandardLink(canonicalUrl);
+            if (!string.IsNullOrEmpty(amazonInline.FallbackLinkUrl))
+            {
+                var affiliateLink = OEmbedHtmlFactory.CreateStandardLink(amazonInline.FallbackLinkUrl, canonicalUrl);
+                if (fallbackHtml == OEmbedHtmlFactory.WrapInContainer(standardLink))
+                    fallbackHtml = OEmbedHtmlFactory.WrapInContainer(affiliateLink);
+                else if (fallbackHtml == standardLink)
+                    fallbackHtml = affiliateLink;
+            }
+
+            amazonInline.HtmlContent = fallbackHtml;
         }
     }
 
