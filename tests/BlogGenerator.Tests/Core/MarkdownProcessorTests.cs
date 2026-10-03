@@ -335,7 +335,7 @@ public class MarkdownProcessorTests
             ? OEmbedCacheEntry.CreateSuccess(cachedHtml, DateTimeOffset.UtcNow, TimeSpan.FromDays(180))
             : OEmbedCacheEntry.CreateFailure(cachedHtml, DateTimeOffset.UtcNow, TimeSpan.FromHours(6), "blocked");
         var processor = new MarkdownProcessor(
-            new SiteOption { SiteUrl = "https://example.com/", AmazonAssociateTag = "ovis-22" },
+            new SiteOption { SiteUrl = "https://example.com/", AmazonAssociateTag = "test-tag" },
             string.Empty,
             resolver,
             amazonCardTemplateRenderer: new StubAmazonCardTemplateRenderer(),
@@ -343,7 +343,7 @@ public class MarkdownProcessorTests
                 new EmptyAmazonProductPageFetcher(), new AmazonProductPageParser()));
 
         var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/");
-        var expectedHtml = OEmbedHtmlFactory.CreateStandardLink(canonicalUrl + "?tag=ovis-22", canonicalUrl);
+        var expectedHtml = OEmbedHtmlFactory.CreateStandardLink(canonicalUrl + "?tag=test-tag", canonicalUrl);
         if (wrapped)
             expectedHtml = OEmbedHtmlFactory.WrapInContainer(expectedHtml);
         Assert.Multiple(() =>
