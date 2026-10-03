@@ -1,0 +1,64 @@
+name: Amazon Fetch Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      asin:
+        description: '取得を確認するASIN'
+        required: true
+        default: B0CDWSWLWV
+        type: string
+      attempts:
+        description: '各runnerの取得回数（10秒間隔・毎回キャッシュなし）'
+        required: true
+        default: '3'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: amazon-diagnostics
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    name: Fetch on runner ${{ matrix.sample }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        sample: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+      - name: Record runner egress IP for comparison
+        run: |
+          if ! curl --fail --silent --show-error --max-time 10 https://checkip.amazonaws.com > runner-egress-ip.txt; then
+            echo 'unavailable' > runner-egress-ip.txt
+          fi
+      - name: Fetch using production implementation
+        env:
+          DIAGNOSTIC_ASIN: ${{ inputs.asin }}
+          DIAGNOSTIC_ATTEMPTS: ${{ inputs.attempts }}
+        run: >-
+          dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj
+          -c Release /p:CodexSkipRelaxVersioner=true -- "$DIAGNOSTIC_ASIN" "$DIAGNOSTIC_ATTEMPTS"
+      - name: Upload results even when fetch fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amazon-diagnostics-${{ matrix.sample }}
+          path: |
+            amazon-diagnostics.json
+            runner-egress-ip.txt
+          if-no-files-found: warn
+          retention-days: 7
