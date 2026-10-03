@@ -314,6 +314,46 @@ public class MarkdownProcessorTests
         Assert.That(articles[0].Body, Does.Contain(expectedHtml));
     }
 
+    [TestCase(true, true)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(false, false)]
+    public async Task Amazonの通常リンクへのフォールバックでもアフィリエイトタグを保持する(
+        bool wrapped, bool successfulCache)
+    {
+        const string asin = "B0CDWSWLWV";
+        const string canonicalUrl = "https://www.amazon.co.jp/dp/B0CDWSWLWV/";
+        var (inputDir, outputDir) = CreateInputAndOutputDirectories();
+        await File.WriteAllTextAsync(Path.Combine(inputDir, "amazon.md"), $"[amazon:{asin}]");
+
+        var cachedHtml = OEmbedHtmlFactory.CreateStandardLink(canonicalUrl);
+        if (wrapped)
+            cachedHtml = OEmbedHtmlFactory.WrapInContainer(cachedHtml);
+        var resolver = new OEmbedResolver(
+            new OEmbedProviderCatalog([]), new HttpClient(new ThrowIfCalledHandler()));
+        resolver.OEmbedCache[canonicalUrl] = successfulCache
+            ? OEmbedCacheEntry.CreateSuccess(cachedHtml, DateTimeOffset.UtcNow, TimeSpan.FromDays(180))
+            : OEmbedCacheEntry.CreateFailure(cachedHtml, DateTimeOffset.UtcNow, TimeSpan.FromHours(6), "blocked");
+        var processor = new MarkdownProcessor(
+            new SiteOption { SiteUrl = "https://example.com/", AmazonAssociateTag = "ovis-22" },
+            string.Empty,
+            resolver,
+            amazonCardTemplateRenderer: new StubAmazonCardTemplateRenderer(),
+            amazonProductMetadataResolver: new AmazonProductMetadataResolver(
+                new EmptyAmazonProductPageFetcher(), new AmazonProductPageParser()));
+
+        var articles = await processor.ProcessMarkdownFilesAsync(inputDir, outputDir, "/");
+        var expectedHtml = OEmbedHtmlFactory.CreateStandardLink(canonicalUrl + "?tag=ovis-22", canonicalUrl);
+        if (wrapped)
+            expectedHtml = OEmbedHtmlFactory.WrapInContainer(expectedHtml);
+        Assert.Multiple(() =>
+        {
+            Assert.That(articles[0].Body, Does.Contain(expectedHtml));
+            Assert.That(resolver.OEmbedCache[canonicalUrl].HtmlContent, Is.EqualTo(cachedHtml),
+                "共有oEmbedキャッシュにはアフィリエイトタグを保存しない");
+        });
+    }
+
     private MarkdownProcessor CreateProcessor(
         IDictionary<string, string>? cachedEntries = null,
         OEmbedCardParser? parser = null)
