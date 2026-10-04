@@ -88,6 +88,16 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
         await rssFeedGenerator.GenerateRssAndAtomFeedsAsync(published, options.OutputPath);
         progress.WritePhaseCompleted("Feed", phaseStopwatch.Elapsed);
 
+        // テーマ、記事、フィードの参照が揃ってから置換し、元画像が必要な場合は保持する。
+        if (options.Webp)
+        {
+            phaseStopwatch.Restart();
+            var result = await new WebpAssetOptimizer().OptimizeAsync(
+                options.InputPath, options.OutputPath, new Uri(siteOption.SiteUrl),
+                [feedOption.RssFileName, feedOption.AtomFileName], Console.Out, options.WebpParallelism);
+            progress.WritePhaseCompleted("Images", phaseStopwatch.Elapsed, result.ToString());
+        }
+
         // キャッシュはサイト生成が完了した場合だけ保存し、失敗したビルドの途中状態を永続化しない
         phaseStopwatch.Restart();
         var cacheFileCount = 0;
