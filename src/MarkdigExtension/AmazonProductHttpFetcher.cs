@@ -6,7 +6,7 @@ namespace BlogGenerator.MarkdigExtension;
 /// <summary>
 /// Amazon商品ページをHTTPで取得するfetcher
 /// </summary>
-public sealed class AmazonProductHttpFetcher : IAmazonProductPageFetcher
+public sealed class AmazonProductHttpFetcher : IAmazonProductPageFetcher, IAmazonProductSearchFetcher
 {
     public static readonly TimeSpan MinimumRequestInterval = TimeSpan.FromSeconds(2);
 
@@ -43,7 +43,13 @@ public sealed class AmazonProductHttpFetcher : IAmazonProductPageFetcher
         };
     }
 
-    public async Task<AmazonProductFetchResult> FetchAsync(string asin)
+    public Task<AmazonProductFetchResult> FetchAsync(string asin) => FetchPageAsync(
+        $"https://www.amazon.co.jp/dp/{Uri.EscapeDataString(asin)}/");
+
+    public Task<AmazonProductFetchResult> FetchSearchAsync(string asin) => FetchPageAsync(
+        $"https://www.amazon.co.jp/s?k={Uri.EscapeDataString(asin)}");
+
+    private async Task<AmazonProductFetchResult> FetchPageAsync(string url)
     {
         await _requestSemaphore.WaitAsync();
         try
@@ -51,8 +57,7 @@ public sealed class AmazonProductHttpFetcher : IAmazonProductPageFetcher
             await WaitForRequestIntervalAsync();
             _lastRequestStartedAt = _utcNowProvider();
 
-            var productUrl = $"https://www.amazon.co.jp/dp/{asin}/";
-            using var request = new HttpRequestMessage(HttpMethod.Get, productUrl);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
             request.Headers.AcceptLanguage.ParseAdd("ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7");
             request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36");

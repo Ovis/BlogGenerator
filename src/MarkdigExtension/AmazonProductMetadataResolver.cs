@@ -16,6 +16,8 @@ public sealed class AmazonProductMetadataResolver
 
     private readonly IAmazonProductPageFetcher _fetcher;
     private readonly AmazonProductPageParser _parser;
+    private readonly IAmazonProductSearchFetcher? _searchFetcher;
+    private readonly AmazonSearchResultParser _searchParser = new();
     private readonly Func<DateTimeOffset> _utcNowProvider;
     private readonly ConcurrentDictionary<string, Lazy<Task<AmazonProductMetadata?>>> _inFlightResolutions = [];
     private long _cacheHits;
@@ -27,10 +29,12 @@ public sealed class AmazonProductMetadataResolver
         IAmazonProductPageFetcher fetcher,
         AmazonProductPageParser parser,
         ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>? cache = null,
-        Func<DateTimeOffset>? utcNowProvider = null)
+        Func<DateTimeOffset>? utcNowProvider = null,
+        IAmazonProductSearchFetcher? searchFetcher = null)
     {
         _fetcher = fetcher;
         _parser = parser;
+        _searchFetcher = searchFetcher ?? fetcher as IAmazonProductSearchFetcher;
         Cache = cache ?? [];
         _utcNowProvider = utcNowProvider ?? (() => DateTimeOffset.UtcNow);
     }
@@ -95,19 +99,17 @@ public sealed class AmazonProductMetadataResolver
 
         Cache.TryGetValue(normalizedAsin, out var cachedEntry);
 
-        Interlocked.Increment(ref _httpRequests);
-        var fetchStopwatch = Stopwatch.StartNew();
-        AmazonProductFetchResult fetchResult;
-        try
-        {
-            fetchResult = await _fetcher.FetchAsync(normalizedAsin);
-        }
-        finally
-        {
-            Interlocked.Add(ref _fetchElapsedTicks, fetchStopwatch.Elapsed.Ticks);
-        }
-
+        var fetchResult = await FetchMeasuredAsync(() => _fetcher.FetchAsync(normalizedAsin));
         var resolution = ResolveFetchResult(fetchResult);
+        if (resolution.Metadata is null && _searchFetcher is not null)
+        {
+            var searchResult = await FetchMeasuredAsync(() => _searchFetcher.FetchSearchAsync(normalizedAsin));
+            var searchResolution = ResolveSearchFetchResult(searchResult, normalizedAsin);
+            // 検索失敗は商品不存在の根拠にしない。両方失敗なら商品ページ側の分類を維持する。
+            resolution = searchResolution.Metadata is not null
+                ? searchResolution
+                : resolution with { ErrorSummary = $"{resolution.ErrorSummary}; Search fallback: {searchResolution.ErrorSummary}" };
+        }
         if (resolution.Metadata is not null)
         {
             Cache[normalizedAsin] = AmazonProductMetadataCacheEntry.CreateSuccess(
@@ -153,6 +155,34 @@ public sealed class AmazonProductMetadataResolver
 
         metadata = null;
         return false;
+    }
+
+    private async Task<AmazonProductFetchResult> FetchMeasuredAsync(Func<Task<AmazonProductFetchResult>> fetch)
+    {
+        Interlocked.Increment(ref _httpRequests);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            return await fetch();
+        }
+        finally
+        {
+            Interlocked.Add(ref _fetchElapsedTicks, stopwatch.Elapsed.Ticks);
+        }
+    }
+
+    private AmazonProductMetadataResolution ResolveSearchFetchResult(AmazonProductFetchResult result, string asin)
+    {
+        if (ContainsBlockMarker(result.Content))
+            return new(null, AmazonProductMetadataFailureKind.Blocked, "Amazon blocked the search request");
+        if (!result.IsSuccess)
+            return new(null, AmazonProductMetadataFailureKind.NetworkError,
+                result.Error?.Message ?? result.StatusCode?.ToString() ?? "Amazon search request failed");
+
+        var metadata = _searchParser.Parse(result.Content, asin);
+        return metadata is null
+            ? new(null, AmazonProductMetadataFailureKind.ParseMiss, "No exact ASIN result with title and image")
+            : new(metadata, AmazonProductMetadataFailureKind.NetworkError, string.Empty);
     }
 
     private AmazonProductMetadataResolution ResolveFetchResult(AmazonProductFetchResult fetchResult)
