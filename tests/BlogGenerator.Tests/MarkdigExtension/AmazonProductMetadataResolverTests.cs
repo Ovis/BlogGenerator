@@ -138,6 +138,158 @@ public class AmazonProductMetadataResolverTests
         });
     }
 
+    [TestCase("blocked")]
+    [TestCase("network")]
+    [TestCase("parse")]
+    [TestCase("notfound")]
+    public async Task 商品ページ取得失敗時は検索結果を成功キャッシュへ保存する(string failure)
+    {
+        var product = failure switch
+        {
+            "blocked" => AmazonProductFetchResult.Success("<html>captcha</html>"),
+            "network" => AmazonProductFetchResult.Failure(HttpStatusCode.ServiceUnavailable, ""),
+            "notfound" => AmazonProductFetchResult.Failure(HttpStatusCode.NotFound, ""),
+            _ => AmazonProductFetchResult.Success("<div id='dp'></div>")
+        };
+        var fetcher = new DualFetcher(product, AmazonProductFetchResult.Success(CreateSearchHtml()));
+        var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
+        var resolver = CreateResolver(fetcher, cache);
+
+        var result = await resolver.ResolveAsync("b0abc12345");
+        var again = await resolver.ResolveAsync("B0ABC12345");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result?.Title, Is.EqualTo("検索商品名"));
+            Assert.That(result?.ImageUrl, Is.EqualTo("https://m.media-amazon.com/images/I/search.jpg"));
+            Assert.That(again, Is.EqualTo(result));
+            Assert.That(fetcher.PageCalls, Is.EqualTo(1));
+            Assert.That(fetcher.SearchCalls, Is.EqualTo(1));
+            Assert.That(fetcher.SearchAsin, Is.EqualTo("B0ABC12345"));
+            Assert.That(cache["B0ABC12345"].FreshUntil, Is.EqualTo(Now.AddDays(365)));
+            Assert.That(cache["B0ABC12345"].Status, Is.EqualTo(AmazonProductMetadataCacheEntryStatus.Success));
+            Assert.That(resolver.GetMetrics().HttpRequests, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task 商品ページで取得成功なら検索しない()
+    {
+        var fetcher = new DualFetcher(AmazonProductFetchResult.Success(CreateProductHtml()),
+            AmazonProductFetchResult.Success(CreateSearchHtml()));
+        var result = await CreateResolver(fetcher, []).ResolveAsync("B0ABC12345");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result?.Title, Is.EqualTo("商品名"));
+            Assert.That(fetcher.SearchCalls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task 有効な成功キャッシュは商品ページも検索も取得しない()
+    {
+        var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
+        cache["B0ABC12345"] = AmazonProductMetadataCacheEntry.CreateSuccess(
+            "B0ABC12345", new("キャッシュ", null), Now, TimeSpan.FromDays(365));
+        var fetcher = new DualFetcher(AmazonProductFetchResult.Success(CreateProductHtml()),
+            AmazonProductFetchResult.Success(CreateSearchHtml()));
+        var result = await CreateResolver(fetcher, cache).ResolveAsync("B0ABC12345");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result?.Title, Is.EqualTo("キャッシュ"));
+            Assert.That(fetcher.PageCalls, Is.Zero);
+            Assert.That(fetcher.SearchCalls, Is.Zero);
+        });
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task 両経路失敗でも古い成功情報を保持して両経路の再試行を抑止する(bool searchBlocked)
+    {
+        var stale = new AmazonProductMetadata("古い商品", "https://example.com/old.jpg");
+        var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
+        cache["B0ABC12345"] = AmazonProductMetadataCacheEntry.CreateSuccess(
+            "B0ABC12345", stale, Now.AddDays(-366), TimeSpan.FromDays(365));
+        var fetcher = new DualFetcher(AmazonProductFetchResult.Success("captcha"),
+            AmazonProductFetchResult.Success(searchBlocked ? "captcha" : "<html>検索結果なし</html>"));
+        var resolver = CreateResolver(fetcher, cache);
+
+        var result = await resolver.ResolveAsync("B0ABC12345");
+        var again = await resolver.ResolveAsync("B0ABC12345");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(stale));
+            Assert.That(again, Is.EqualTo(stale));
+            Assert.That(cache["B0ABC12345"].Status, Is.EqualTo(AmazonProductMetadataCacheEntryStatus.Success));
+            Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddHours(6)));
+            Assert.That(fetcher.PageCalls, Is.EqualTo(1));
+            Assert.That(fetcher.SearchCalls, Is.EqualTo(1));
+        });
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task 検索結果なしや検索404を商品不存在として保存しない(bool searchNotFound)
+    {
+        var fetcher = new DualFetcher(AmazonProductFetchResult.Success("captcha"),
+            searchNotFound ? AmazonProductFetchResult.Failure(HttpStatusCode.NotFound, "")
+                : AmazonProductFetchResult.Success(CreateSearchHtml().Replace("B0ABC12345", "B000000000")));
+        var cache = new ConcurrentDictionary<string, AmazonProductMetadataCacheEntry>();
+        var resolver = CreateResolver(fetcher, cache);
+        var result = await resolver.ResolveAsync("B0ABC12345");
+        await resolver.ResolveAsync("B0ABC12345");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Null);
+            Assert.That(cache["B0ABC12345"].FailureKind, Is.EqualTo(AmazonProductMetadataFailureKind.Blocked));
+            Assert.That(cache["B0ABC12345"].NextRetryAt, Is.EqualTo(Now.AddHours(6)));
+            Assert.That(fetcher.PageCalls, Is.EqualTo(1));
+            Assert.That(fetcher.SearchCalls, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task 同じASINの並列取得はフォールバックを含めて一度だけ実行する()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fetcher = new DualFetcher(AmazonProductFetchResult.Success("captcha"),
+            AmazonProductFetchResult.Success(CreateSearchHtml()), gate);
+        var resolver = CreateResolver(fetcher, []);
+        var first = resolver.ResolveAsync("B0ABC12345");
+        var second = resolver.ResolveAsync("B0ABC12345");
+        gate.SetResult(true);
+        var results = await Task.WhenAll(first, second);
+        Assert.Multiple(() =>
+        {
+            Assert.That(results[0], Is.EqualTo(results[1]));
+            Assert.That(results[0]?.Title, Is.EqualTo("検索商品名"));
+            Assert.That(fetcher.PageCalls, Is.EqualTo(1));
+            Assert.That(fetcher.SearchCalls, Is.EqualTo(1));
+        });
+    }
+
+    private static string CreateSearchHtml() =>
+        "<div data-component-type='s-search-result' data-asin='B0ABC12345'><h2>検索商品名</h2><img class='s-image' src='https://m.media-amazon.com/images/I/search.jpg'></div>";
+
+    private sealed class DualFetcher(AmazonProductFetchResult page, AmazonProductFetchResult search,
+        TaskCompletionSource<bool>? gate = null) : IAmazonProductPageFetcher, IAmazonProductSearchFetcher
+    {
+        public int PageCalls { get; private set; }
+        public int SearchCalls { get; private set; }
+        public string? SearchAsin { get; private set; }
+        public async Task<AmazonProductFetchResult> FetchAsync(string asin)
+        {
+            PageCalls++;
+            if (gate is not null) await gate.Task;
+            return page;
+        }
+        public Task<AmazonProductFetchResult> FetchSearchAsync(string asin)
+        {
+            SearchCalls++;
+            SearchAsin = asin;
+            return Task.FromResult(search);
+        }
+    }
+
     private static AmazonProductMetadataResolver CreateResolver(
         IAmazonProductPageFetcher fetcher,
         ConcurrentDictionary<string, AmazonProductMetadataCacheEntry> cache) =>

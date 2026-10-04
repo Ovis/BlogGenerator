@@ -64,6 +64,33 @@ public class AmazonProductHttpFetcherTests
     }
 
     [Test]
+    public async Task 商品ページと検索結果は同じ間隔制限とヘッダーで取得する()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var delays = new List<TimeSpan>();
+        var urls = new List<string>();
+        using var client = new HttpClient(new StubHttpMessageHandler(request =>
+        {
+            urls.Add(request.RequestUri!.ToString());
+            Assert.That(request.Headers.AcceptLanguage.ToString(), Does.Contain("ja-JP"));
+            return new(HttpStatusCode.OK) { Content = new StringContent("<html></html>") };
+        }));
+        var fetcher = new AmazonProductHttpFetcher(client, () => now, delay =>
+        {
+            delays.Add(delay);
+            now += delay;
+            return Task.CompletedTask;
+        });
+        await fetcher.FetchAsync("B0ABC12345");
+        await fetcher.FetchSearchAsync("B0ABC12345");
+        Assert.Multiple(() =>
+        {
+            Assert.That(urls, Is.EqualTo(new[] { "https://www.amazon.co.jp/dp/B0ABC12345/", "https://www.amazon.co.jp/s?k=B0ABC12345" }));
+            Assert.That(delays, Is.EqualTo(new[] { TimeSpan.FromSeconds(2) }));
+        });
+    }
+
+    [Test]
     public async Task Amazon用HTTPクライアントはgzip圧縮HTMLを展開できる()
     {
         using var listener = new HttpListener();
