@@ -56,7 +56,12 @@ for (var attempt = 1; attempt <= attempts; attempt++)
     if (engine == "search" && blockMarkers.Length != 0) metadata = null;
     var outcome = metadata is not null ? "Success" : engine != "search" ? entry?.FailureKind?.ToString()
         : blockMarkers.Length != 0 ? "Blocked" : !response.IsSuccess ? "NetworkError" : "SearchResultMissing";
-    var pageTitle = new HtmlParser().ParseDocument(response.Content).Title;
+    var parsedPage = new HtmlParser().ParseDocument(response.Content);
+    var pageTitle = parsedPage.Title;
+    foreach (var element in parsedPage.QuerySelectorAll("script, style")) element.Remove();
+    var pageText = string.Join(' ', (parsedPage.Body?.TextContent ?? string.Empty)
+        .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    if (pageText.Length > 800) pageText = pageText[..800];
     var result = new
     {
         attempt,
@@ -71,6 +76,7 @@ for (var attempt = 1; attempt <= attempts; attempt++)
         responseSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(response.Content))),
         htmlFile,
         pageTitle,
+        pageText,
         blockMarkers,
         exceptionType = response.Error?.GetType().Name,
         outcome,
