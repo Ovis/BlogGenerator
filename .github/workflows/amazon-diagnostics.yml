@@ -54,7 +54,7 @@ jobs:
           -c Release /p:CodexSkipRelaxVersioner=true -- "$DIAGNOSTIC_ASIN" "$DIAGNOSTIC_ATTEMPTS"
       - name: Upload results even when fetch fails
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: amazon-diagnostics-${{ matrix.sample }}
           path: |
