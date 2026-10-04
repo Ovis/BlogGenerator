@@ -39,7 +39,8 @@ public class Program
                 parseResult.GetValue(commandLineSetup.OEmbedOption),
                 parseResult.GetValue(commandLineSetup.AmazonCacheOption),
                 parseResult.GetValue(commandLineSetup.ConfigOption),
-                parseResult.GetValue(commandLineSetup.WebpOption));
+                parseResult.GetValue(commandLineSetup.WebpOption),
+                parseResult.GetValue(commandLineSetup.WebpParallelismOption));
 
             return await new BlogBuildService(timeProvider).BuildAsync(options);
         });

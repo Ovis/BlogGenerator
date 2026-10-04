@@ -23,8 +23,11 @@ public class WebpAssetOptimizerTests
     [TearDown]
     public void TearDown() => Directory.Delete(_root, recursive: true);
 
-    [Test]
-    public async Task 変換した画像だけを出力しHTMLとCSSとフィードを更新してソースを保持する()
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(4)]
+    [TestCase(null)]
+    public async Task 変換した画像だけを出力しHTMLとCSSとフィードを更新してソースを保持する(int? parallelism)
     {
         CreateImage("posts/photo.jpg");
         CreateImage("posts/transparent.png", transparent: true);
@@ -33,7 +36,7 @@ public class WebpAssetOptimizerTests
         await WriteOutput("feed.rss", "<rss><channel><item><description>&lt;img src=\"/posts/photo.jpg\"&gt;</description></item></channel></rss>");
         var source = await File.ReadAllBytesAsync(Path.Combine(Input, "posts/photo.jpg"));
         using var log = new StringWriter();
-        var result = await Optimize(log);
+        var result = await Optimize(log, parallelism);
 
         using var transparent = new MagickImage(Path.Combine(Output, "posts/transparent.webp"));
         Assert.Multiple(() =>
@@ -50,6 +53,8 @@ public class WebpAssetOptimizerTests
             Assert.That(transparent.Width, Is.EqualTo(64));
             Assert.That(transparent.Height, Is.EqualTo(32));
             Assert.That(transparent.HasAlpha, Is.True);
+            Assert.That(log.ToString(), Does.Contain($"Parallelism: {WebpAssetOptimizer.ResolveParallelism(parallelism, Environment.ProcessorCount, 2)}"));
+            Assert.That(log.ToString(), Does.Contain(parallelism is null ? "automatic" : "specified"));
         });
         using var original = new MagickImage(Path.Combine(Input, "posts/transparent.png"));
         Assert.That(transparent.Compare(original, ErrorMetric.Absolute), Is.Zero, "PNG pixels are preserved losslessly");
@@ -219,8 +224,31 @@ public class WebpAssetOptimizerTests
         Assert.That(await File.ReadAllBytesAsync(Path.Combine(Output, "high-depth.png")), Is.EqualTo(original));
     }
 
-    private Task<WebpOptimizationResult> Optimize(TextWriter log) => new WebpAssetOptimizer().OptimizeAsync(
-        Input, Output, Site, ["feed.rss", "feed.atom"], log);
+    [TestCase(null, 1, 100, 1)]
+    [TestCase(null, 2, 100, 2)]
+    [TestCase(null, 8, 100, 4)]
+    [TestCase(null, 8, 2, 2)]
+    [TestCase(null, 4, 0, 1)]
+    [TestCase(1, 8, 100, 1)]
+    [TestCase(8, 2, 100, 8)]
+    [TestCase(8, 2, 3, 3)]
+    public void CPU数と画像数による自動設定を明示指定で上書きできる(int? requested, int processors, int images, int expected)
+    {
+        Assert.That(WebpAssetOptimizer.ResolveParallelism(requested, processors, images), Is.EqualTo(expected));
+    }
+
+    [TestCase(0)]
+    [TestCase(-1)]
+    public void 不正な並列数では画像に触れず失敗する(int parallelism)
+    {
+        // CLIを経由しない呼び出しでも、ファイル操作より前に拒否する。
+        using var log = new StringWriter();
+        Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => new WebpAssetOptimizer().OptimizeAsync(
+            Path.Combine(_root, "missing-input"), Path.Combine(_root, "missing-output"), Site, [], log, parallelism));
+    }
+
+    private Task<WebpOptimizationResult> Optimize(TextWriter log, int? parallelism = null) => new WebpAssetOptimizer().OptimizeAsync(
+        Input, Output, Site, ["feed.rss", "feed.atom"], log, parallelism);
 
     private void CreateImage(string relative, bool transparent = false)
     {

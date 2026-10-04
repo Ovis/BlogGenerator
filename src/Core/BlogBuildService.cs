@@ -94,7 +94,7 @@ internal sealed class BlogBuildService(TimeProvider timeProvider)
             phaseStopwatch.Restart();
             var result = await new WebpAssetOptimizer().OptimizeAsync(
                 options.InputPath, options.OutputPath, new Uri(siteOption.SiteUrl),
-                [feedOption.RssFileName, feedOption.AtomFileName], Console.Out);
+                [feedOption.RssFileName, feedOption.AtomFileName], Console.Out, options.WebpParallelism);
             progress.WritePhaseCompleted("Images", phaseStopwatch.Elapsed, result.ToString());
         }
 

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Buffers.Binary;
 using System.Net;
@@ -16,9 +17,18 @@ internal sealed class WebpAssetOptimizer
     private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".mp4", ".mp3", ".pdf", ".zip" };
 
-    public async Task<WebpOptimizationResult> OptimizeAsync(
-        string inputDir, string outputDir, Uri siteUrl, IReadOnlyCollection<string> feedFiles, TextWriter log)
+    internal static int ResolveParallelism(int? requested, int processorCount, int imageCount)
     {
+        if (requested is <= 0) throw new ArgumentOutOfRangeException(nameof(requested));
+        return Math.Max(1, Math.Min(imageCount, requested ?? Math.Clamp(processorCount, 1, 4)));
+    }
+
+    public async Task<WebpOptimizationResult> OptimizeAsync(
+        string inputDir, string outputDir, Uri siteUrl, IReadOnlyCollection<string> feedFiles, TextWriter log, int? maxDegreeOfParallelism = null)
+    {
+        if (maxDegreeOfParallelism is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxDegreeOfParallelism));
+        var conversionLog = TextWriter.Synchronized(log);
         var outputFiles = Directory.EnumerateFiles(outputDir, "*", SearchOption.AllDirectories).ToArray();
         var siteOriginalBytes = outputFiles.Sum(x => new FileInfo(x).Length);
         var existingPaths = outputFiles.Select(x => Relative(outputDir, x)).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -28,6 +38,9 @@ internal sealed class WebpAssetOptimizer
             .Where(x => File.Exists(Path.Combine(outputDir, x)))
             .Order(StringComparer.Ordinal)
             .ToArray();
+        var processorCount = Environment.ProcessorCount;
+        var parallelism = ResolveParallelism(maxDegreeOfParallelism, processorCount, sources.Length);
+        await log.WriteLineAsync($"[Images] Parallelism: {parallelism} ({(maxDegreeOfParallelism is null ? "automatic" : "specified")}, CPUs: {processorCount}, images: {sources.Length})");
         var targetCounts = sources.GroupBy(x => Path.ChangeExtension(x, ".webp"), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.Count(), StringComparer.OrdinalIgnoreCase);
         var originalBytes = sources.Sum(x => new FileInfo(Path.Combine(outputDir, x)).Length);
@@ -35,23 +48,23 @@ internal sealed class WebpAssetOptimizer
         Directory.CreateDirectory(staging);
         try
         {
-            var candidates = new Dictionary<string, ConvertedImage>(StringComparer.Ordinal);
-            foreach (var source in sources)
+            var completed = new ConcurrentDictionary<string, ConvertedImage>(StringComparer.Ordinal);
+            await Parallel.ForEachAsync(sources, new ParallelOptions { MaxDegreeOfParallelism = parallelism }, async (source, _) =>
             {
                 var target = Path.ChangeExtension(source, ".webp");
                 if (targetCounts[target] != 1 || existingPaths.Contains(target))
                 {
-                    await log.WriteLineAsync($"[Images] Keeping {source}: WebP output name collision");
-                    continue;
+                    await conversionLog.WriteLineAsync($"[Images] Keeping {source}: WebP output name collision");
+                    return;
                 }
                 var sourceFile = Path.Combine(outputDir, source);
                 var stagedFile = Path.Combine(staging, Guid.NewGuid().ToString("N") + ".webp");
                 try
                 {
-                    if (MustKeepPng(sourceFile)) continue;
+                    if (MustKeepPng(sourceFile)) return;
                     using var images = new MagickImageCollection(sourceFile);
                     // 拡張子と中身が異なるファイルやアニメーションを単一フレームに変えない。
-                    if (images.Count != 1 || images[0].Format is not (MagickFormat.Jpeg or MagickFormat.Png)) continue;
+                    if (images.Count != 1 || images[0].Format is not (MagickFormat.Jpeg or MagickFormat.Png)) return;
                     var image = images[0];
                     image.AutoOrient();
                     if (image.GetColorProfile() is not null) image.TransformColorSpace(ColorProfiles.SRGB);
@@ -66,14 +79,16 @@ internal sealed class WebpAssetOptimizer
                     if (verification.Format != MagickFormat.WebP || verification.Width != image.Width || verification.Height != image.Height)
                         throw new InvalidDataException("WebP verification failed");
                     var bytes = new FileInfo(stagedFile).Length;
-                    if (bytes >= new FileInfo(sourceFile).Length) continue;
-                    candidates.Add(source, new(target, stagedFile, bytes));
+                    if (bytes >= new FileInfo(sourceFile).Length) return;
+                    completed[source] = new(target, stagedFile, bytes);
                 }
                 catch (Exception ex) when (ex is MagickException or IOException or UnauthorizedAccessException)
                 {
-                    await log.WriteLineAsync($"[Images] Keeping {source}: conversion failed ({ex.Message})");
+                    await conversionLog.WriteLineAsync($"[Images] Keeping {source}: conversion failed ({ex.Message})");
                 }
-            }
+            });
+            var candidates = completed.OrderBy(x => x.Key, StringComparer.Ordinal)
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
 
             if (candidates.Count == 0) return new(sources.Length, 0, originalBytes, originalBytes, siteOriginalBytes, siteOriginalBytes);
 
@@ -85,14 +100,13 @@ internal sealed class WebpAssetOptimizer
 
             var replacements = candidates.ToDictionary(x => x.Key, x => x.Value.Target, StringComparer.Ordinal);
             var rewritten = RewriteTexts(texts, siteUrl, replacements, feedFiles, log);
-            var namePattern = new Regex(string.Join('|', candidates.Keys.Select(Path.GetFileName).Distinct()
-                .OrderByDescending(x => x!.Length).Select(x => Regex.Escape(x!))), RegexOptions.IgnoreCase);
+            var nameMatcher = new ImageFileNameMatcher(candidates.Keys.Select(Path.GetFileName).Cast<string>());
             var remainingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var text in rewritten.Values)
             {
                 // 未対応の属性、JS、JSON、SVG、コード例などに元の名前が残る場合は保守的に保持する。
                 var decoded = DecodeReferenceText(text);
-                foreach (Match match in namePattern.Matches(decoded)) remainingNames.Add(match.Value);
+                nameMatcher.AddMatches(decoded, remainingNames);
                 // 動的に組み立てる拡張子は対象ファイルを特定できないため、同形式の元画像を保持する。
                 foreach (Match match in Regex.Matches(decoded, "(?:[\"']\\.(?<ext>jpe?g|png)[\"']|\\$\\{[^}]*\\}[^\\s\"']*\\.(?<ext>jpe?g|png))", RegexOptions.IgnoreCase))
                     foreach (var source in candidates.Keys.Where(x => Path.GetExtension(x).Equals("." + match.Groups["ext"].Value, StringComparison.OrdinalIgnoreCase)))
