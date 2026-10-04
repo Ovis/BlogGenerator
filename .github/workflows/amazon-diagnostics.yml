@@ -16,6 +16,7 @@ on:
         options:
           - http
           - playwright
+          - search
       attempts:
         description: '各runnerの取得回数（10秒間隔・毎回キャッシュなし）'
         required: true
@@ -66,6 +67,19 @@ jobs:
         run: >-
           dotnet tools/AmazonFetchDiagnostics/bin/Release/net10.0/AmazonFetchDiagnostics.dll
           "$DIAGNOSTIC_ASIN" "$DIAGNOSTIC_ATTEMPTS" "$DIAGNOSTIC_ENGINE"
+      - name: Report diagnostic outcome
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          path = Path('amazon-diagnostics.json')
+          if path.exists():
+              for result in json.loads(path.read_text()):
+                  message = json.dumps(result, ensure_ascii=False)
+                  message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print('::notice title=Amazon diagnostic result::' + message)
+          PYTHON
       - name: Upload results even when fetch fails
         if: always()
         uses: actions/upload-artifact@v4

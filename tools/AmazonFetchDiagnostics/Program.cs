@@ -8,9 +8,9 @@ using AngleSharp.Html.Parser;
 
 if (args.Length is < 2 or > 3 || !Regex.IsMatch(args[0], "^[A-Za-z0-9]{10}$") ||
     !int.TryParse(args[1], out var attempts) || attempts is < 1 or > 3 ||
-    (args.Length == 3 && args[2] is not ("http" or "playwright")))
+    (args.Length == 3 && args[2] is not ("http" or "playwright" or "search")))
 {
-    Console.Error.WriteLine("Usage: AmazonFetchDiagnostics <10-character ASIN> <attempts: 1-3> [http|playwright]");
+    Console.Error.WriteLine("Usage: AmazonFetchDiagnostics <10-character ASIN> <attempts: 1-3> [http|playwright|search]");
     return 2;
 }
 
@@ -18,8 +18,13 @@ var asin = args[0].ToUpperInvariant();
 using var client = AmazonProductHttpFetcher.CreateHttpClient();
 var engine = args.Length == 3 ? args[2] : "http";
 await using var browserFetcher = engine == "playwright" ? await PlaywrightFetcher.CreateAsync() : null;
-var fetcher = new RecordingFetcher(browserFetcher is null
-    ? new AmazonProductHttpFetcher(client) : browserFetcher);
+IAmazonProductPageFetcher rawFetcher = engine switch
+{
+    "search" => new AmazonSearchFetcher(client),
+    "playwright" => browserFetcher!,
+    _ => new AmazonProductHttpFetcher(client)
+};
+var fetcher = new RecordingFetcher(rawFetcher);
 var results = new List<object>();
 var failures = 0;
 for (var attempt = 1; attempt <= attempts; attempt++)
@@ -28,16 +33,29 @@ for (var attempt = 1; attempt <= attempts; attempt++)
     var resolver = new AmazonProductMetadataResolver(fetcher, new AmazonProductPageParser());
     var startedAt = DateTimeOffset.UtcNow;
     var stopwatch = Stopwatch.StartNew();
-    var metadata = await resolver.ResolveAsync(asin);
+    AmazonProductMetadata? metadata;
+    if (engine == "search")
+    {
+        var searchResponse = await fetcher.FetchAsync(asin);
+        metadata = searchResponse.IsSuccess
+            ? new AmazonSearchResultParser().Parse(searchResponse.Content, asin) : null;
+    }
+    else
+    {
+        metadata = await resolver.ResolveAsync(asin);
+    }
     stopwatch.Stop();
     var response = fetcher.LastResult!;
-    var entry = resolver.Cache[asin];
+    resolver.Cache.TryGetValue(asin, out var entry);
     var htmlFile = $"amazon-response-{attempt}.html";
     await File.WriteAllTextAsync(htmlFile, response.Content, new UTF8Encoding(false));
     var blockMarkers = new[]
     {
         "captcha", "unusual traffic", "automated access to Amazon data", "ロボットではありません"
     }.Where(marker => response.Content.Contains(marker, StringComparison.OrdinalIgnoreCase)).ToArray();
+    if (engine == "search" && blockMarkers.Length != 0) metadata = null;
+    var outcome = metadata is not null ? "Success" : engine != "search" ? entry?.FailureKind?.ToString()
+        : blockMarkers.Length != 0 ? "Blocked" : !response.IsSuccess ? "NetworkError" : "SearchResultMissing";
     var pageTitle = new HtmlParser().ParseDocument(response.Content).Title;
     var result = new
     {
@@ -55,8 +73,10 @@ for (var attempt = 1; attempt <= attempts; attempt++)
         pageTitle,
         blockMarkers,
         exceptionType = response.Error?.GetType().Name,
-        outcome = metadata is null ? entry.FailureKind?.ToString() : "Success",
-        errorSummary = entry.ErrorSummary,
+        outcome,
+        errorSummary = entry?.ErrorSummary ?? response.Error?.Message ??
+            (outcome == "Success" ? "" : outcome == "Blocked" ? "Amazon returned a verification page"
+                : outcome == "SearchResultMissing" ? "No exact ASIN result with title and image" : "Search request failed"),
         title = metadata?.Title,
         imageUrl = metadata?.ImageUrl,
         runnerOs = Environment.GetEnvironmentVariable("RUNNER_OS"),

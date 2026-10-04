@@ -71,3 +71,17 @@ dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj 
 ```
 
 Linuxでブラウザのシステム依存が不足する場合は、Playwrightの公式手順に従い `install --with-deps chromium` を使います。
+
+## 検索結果からの取得診断
+
+`engine=search` は `https://www.amazon.co.jp/s?k={ASIN}` をHTTPで取得します。
+商品ページと同じHTTPヘッダー・圧縮展開・タイムアウトを使用し、キャッシュは使いません。
+検索結果の `data-asin` が指定ASINと一致する商品だけから、h2のタイトルと `img.s-image` のURLを抽出します。
+別商品の結果や、タイトル・HTTP(S)画像URLが揃わない結果は採用しません。
+一致する結果がない場合は `SearchResultMissing`、確認画面なら `Blocked`、通信失敗なら `NetworkError` です。
+
+```bash
+dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj -c Release -- B0CDWSWLWV 1 search
+```
+
+検索ページのHTMLもartifactに保存します。これは取得経路の診断で、本番のフォールバックはまだ変更しません。
