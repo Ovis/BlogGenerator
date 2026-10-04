@@ -6,16 +6,20 @@ using System.Text.RegularExpressions;
 using BlogGenerator.MarkdigExtension;
 using AngleSharp.Html.Parser;
 
-if (args.Length != 2 || !Regex.IsMatch(args[0], "^[A-Za-z0-9]{10}$") ||
-    !int.TryParse(args[1], out var attempts) || attempts is < 1 or > 3)
+if (args.Length is < 2 or > 3 || !Regex.IsMatch(args[0], "^[A-Za-z0-9]{10}$") ||
+    !int.TryParse(args[1], out var attempts) || attempts is < 1 or > 3 ||
+    (args.Length == 3 && args[2] is not ("http" or "playwright")))
 {
-    Console.Error.WriteLine("Usage: AmazonFetchDiagnostics <10-character ASIN> <attempts: 1-3>");
+    Console.Error.WriteLine("Usage: AmazonFetchDiagnostics <10-character ASIN> <attempts: 1-3> [http|playwright]");
     return 2;
 }
 
 var asin = args[0].ToUpperInvariant();
 using var client = AmazonProductHttpFetcher.CreateHttpClient();
-var fetcher = new RecordingFetcher(new AmazonProductHttpFetcher(client));
+var engine = args.Length == 3 ? args[2] : "http";
+await using var browserFetcher = engine == "playwright" ? await PlaywrightFetcher.CreateAsync() : null;
+var fetcher = new RecordingFetcher(browserFetcher is null
+    ? new AmazonProductHttpFetcher(client) : browserFetcher);
 var results = new List<object>();
 var failures = 0;
 for (var attempt = 1; attempt <= attempts; attempt++)
@@ -38,6 +42,9 @@ for (var attempt = 1; attempt <= attempts; attempt++)
     var result = new
     {
         attempt,
+        engine,
+        browserHttpStatus = browserFetcher?.HttpStatus,
+        finalUrl = browserFetcher?.FinalUrl,
         startedAt,
         asin,
         elapsedMilliseconds = stopwatch.ElapsedMilliseconds,

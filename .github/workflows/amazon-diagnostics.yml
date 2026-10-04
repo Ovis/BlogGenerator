@@ -8,6 +8,14 @@ on:
         required: true
         default: B0CDWSWLWV
         type: string
+      engine:
+        description: 'HTML取得方法'
+        required: true
+        default: http
+        type: choice
+        options:
+          - http
+          - playwright
       attempts:
         description: '各runnerの取得回数（10秒間隔・毎回キャッシュなし）'
         required: true
@@ -40,6 +48,11 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.x'
+      - name: Build diagnostic tool
+        run: dotnet build tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj -c Release /p:CodexSkipRelaxVersioner=true
+      - name: Install Chromium
+        if: inputs.engine == 'playwright'
+        run: pwsh tools/AmazonFetchDiagnostics/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
       - name: Record runner egress IP for comparison
         run: |
           if ! curl --fail --silent --show-error --max-time 10 https://checkip.amazonaws.com > runner-egress-ip.txt; then
@@ -49,9 +62,10 @@ jobs:
         env:
           DIAGNOSTIC_ASIN: ${{ inputs.asin }}
           DIAGNOSTIC_ATTEMPTS: ${{ inputs.attempts }}
+          DIAGNOSTIC_ENGINE: ${{ inputs.engine }}
         run: >-
-          dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj
-          -c Release /p:CodexSkipRelaxVersioner=true -- "$DIAGNOSTIC_ASIN" "$DIAGNOSTIC_ATTEMPTS"
+          dotnet tools/AmazonFetchDiagnostics/bin/Release/net10.0/AmazonFetchDiagnostics.dll
+          "$DIAGNOSTIC_ASIN" "$DIAGNOSTIC_ATTEMPTS" "$DIAGNOSTIC_ENGINE"
       - name: Upload results even when fetch fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -60,6 +74,7 @@ jobs:
           path: |
             amazon-diagnostics.json
             amazon-response-*.html
+            amazon-browser-*
             runner-egress-ip.txt
           if-no-files-found: warn
           retention-days: 7

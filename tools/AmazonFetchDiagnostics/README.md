@@ -1,6 +1,6 @@
 # Amazon取得診断
 
-本番の `AmazonProductHttpFetcher`（同じヘッダー、圧縮展開、タイムアウト）、
+通常モードは本番の `AmazonProductHttpFetcher`（同じヘッダー、圧縮展開、タイムアウト）、
 `AmazonProductPageParser`、`AmazonProductMetadataResolver` を使い、商品ページ取得だけを検証します。
 ブログ生成・公開や本番キャッシュの読書きは行いません。
 各試行で空のメモリキャッシュから開始するため、失敗キャッシュによる再試行抑止の影響も受けません。
@@ -47,3 +47,27 @@ dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj 
 カレントディレクトリに `amazon-diagnostics.json` と各試行の `amazon-response-N.html` を出力します。
 終了コードは全試行成功で0、1件以上取得失敗で1、引数不正で2です。
 ASINは英数字10文字、回数は1〜3のみ受け付けます。
+
+## Playwrightとの比較
+
+手動workflowの `engine` を `playwright` にすると、通常のheadless Chromiumで商品ページを開きます。
+User-Agentの偽装や確認画面のボタン操作は行いません。各試行で新しいブラウザコンテキストを作り、Cookieを引き継ぎません。
+HTTPモードと同じASIN・回数で比較してください。別workflow実行では出口IPと時刻も変わるため、ブラウザだけが差の原因とは断定できません。
+
+- `amazon-browser-N-initial.html`: メインページのHTTP応答本文
+- `amazon-browser-N-dom.html`: JavaScript実行・load待ち後のDOM
+- `amazon-browser-N.png`: 画面のスクリーンショット
+- `amazon-response-N.html`: 商品情報抽出に渡したDOM
+
+JSONの `engine`、`browserHttpStatus`（実際のメイン応答ステータス）、`finalUrl` も確認できます。
+本番と同じ商品情報パーサー・ブロック判定を使用します。ブラウザ版のブロック判定はDOMに対して行います。
+
+ローカルではツールをビルド後、生成された `playwright.ps1` をPowerShellで実行してChromiumをインストールしてください。
+
+```bash
+dotnet build tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj -c Release
+pwsh tools/AmazonFetchDiagnostics/bin/Release/net10.0/playwright.ps1 install chromium
+dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj -c Release -- B0CDWSWLWV 1 playwright
+```
+
+Linuxでブラウザのシステム依存が不足する場合は、Playwrightの公式手順に従い `install --with-deps chromium` を使います。
