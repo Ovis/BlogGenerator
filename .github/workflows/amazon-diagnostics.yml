@@ -59,6 +59,7 @@ jobs:
           name: amazon-diagnostics-${{ matrix.sample }}
           path: |
             amazon-diagnostics.json
+            amazon-response-*.html
             runner-egress-ip.txt
           if-no-files-found: warn
           retention-days: 7

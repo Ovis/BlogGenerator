@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BlogGenerator.MarkdigExtension;
+using AngleSharp.Html.Parser;
 
 if (args.Length != 2 || !Regex.IsMatch(args[0], "^[A-Za-z0-9]{10}$") ||
     !int.TryParse(args[1], out var attempts) || attempts is < 1 or > 3)
@@ -27,6 +28,13 @@ for (var attempt = 1; attempt <= attempts; attempt++)
     stopwatch.Stop();
     var response = fetcher.LastResult!;
     var entry = resolver.Cache[asin];
+    var htmlFile = $"amazon-response-{attempt}.html";
+    await File.WriteAllTextAsync(htmlFile, response.Content, new UTF8Encoding(false));
+    var blockMarkers = new[]
+    {
+        "captcha", "unusual traffic", "automated access to Amazon data", "ロボットではありません"
+    }.Where(marker => response.Content.Contains(marker, StringComparison.OrdinalIgnoreCase)).ToArray();
+    var pageTitle = new HtmlParser().ParseDocument(response.Content).Title;
     var result = new
     {
         attempt,
@@ -36,6 +44,9 @@ for (var attempt = 1; attempt <= attempts; attempt++)
         httpStatus = response.StatusCode is null ? (int?)null : (int)response.StatusCode,
         responseLength = response.Content.Length,
         responseSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(response.Content))),
+        htmlFile,
+        pageTitle,
+        blockMarkers,
         exceptionType = response.Error?.GetType().Name,
         outcome = metadata is null ? entry.FailureKind?.ToString() : "Success",
         errorSummary = entry.ErrorSummary,
@@ -53,7 +64,7 @@ for (var attempt = 1; attempt <= attempts; attempt++)
 
 await File.WriteAllTextAsync("amazon-diagnostics.json", JsonSerializer.Serialize(results,
     new JsonSerializerOptions { WriteIndented = true }));
-Console.WriteLine($"Succeeded: {attempts - failures}; failed: {failures}. HTML and cookies are not saved.");
+Console.WriteLine($"Succeeded: {attempts - failures}; failed: {failures}. Response HTML is saved; cookies and request headers are not saved.");
 return failures == 0 ? 0 : 1;
 
 sealed class RecordingFetcher(IAmazonProductPageFetcher inner) : IAmazonProductPageFetcher

@@ -11,12 +11,14 @@ workflowがデフォルトブランチに入った後、Actions の **Amazon Fet
 ASINの初期値は `B0CDWSWLWV`。3つの新しい `ubuntu-latest` runnerを順番に使用し、
 各runnerで1〜3回、10秒間隔で取得します（最大9リクエスト）。
 取得失敗はジョブ失敗として表示されますが、他のrunnerの診断は継続します。
-JSON結果と、比較用の出口IPを7日間のartifactとして保存します。
+JSON結果、各試行の応答HTML（`amazon-response-1.html`など）、比較用の出口IPを7日間のartifactとして保存します。
 出口IPの確認に使う `checkip.amazonaws.com` が失敗しても商品取得の診断は継続します。
 
 結果にはUTC時刻、ASIN、HTTPステータス、例外型、本文長・SHA-256、
 本番ロジックの判定（Success / Blocked / NetworkError / UnexpectedResponse / ParseMiss / NotFound）、
-取得できた商品名・画像URL、commitを記録します。HTML本文・Cookieは保存しません。
+取得できた商品名・画像URL、commit、HTMLファイル名、ページタイトル、ブロック判定に一致した文字列を記録します。
+HTMLはfetcherが圧縮展開・文字列化した応答本文をUTF-8で保存します。Cookie・リクエストヘッダーは保存しません。
+HTMLはブラウザで実行せず、まずテキストとして確認してください。
 HTTPステータスはfetcherの結果値です。現実装は成功応答を200へ正規化し、通信例外ではnullです。
 
 ## 結果の読み方
@@ -42,6 +44,6 @@ dotnet run --project tools/AmazonFetchDiagnostics/AmazonFetchDiagnostics.csproj 
   -c Release /p:CodexSkipRelaxVersioner=true -- B0CDWSWLWV 3
 ```
 
-カレントディレクトリに `amazon-diagnostics.json` を出力します。
+カレントディレクトリに `amazon-diagnostics.json` と各試行の `amazon-response-N.html` を出力します。
 終了コードは全試行成功で0、1件以上取得失敗で1、引数不正で2です。
 ASINは英数字10文字、回数は1〜3のみ受け付けます。
