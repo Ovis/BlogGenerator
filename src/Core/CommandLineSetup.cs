@@ -10,6 +10,7 @@ public class CommandLineSetup
     public Option<string> OEmbedOption { get; } = new("--oembed", ["/oembed"]) { Description = "oEmbedキャッシュファイル" };
     public Option<string> AmazonCacheOption { get; } = new("--amazon-cache") { Description = "Amazon商品メタデータキャッシュファイル" };
     public Option<FileInfo> ConfigOption { get; } = new("--config", ["/config", "-c"]) { Description = "設定ファイルのパス" };
+    public Option<bool> WebpOption { get; } = new("--webp") { Description = "出力のJPEG・PNGを小さいWebPへ変換し、画像への参照を更新します" };
 
     public Option<DirectoryInfo> ScheduledInputOption { get; } = new("--input", ["-i"]) { Description = "入力フォルダー", Required = true };
     public Option<string> AfterOption { get; } = new("--after") { Description = "判定開始日時（ISO 8601、オフセット必須）", Required = true };
@@ -35,6 +36,7 @@ public class CommandLineSetup
         rootCommand.Add(ThemeOption);
         rootCommand.Add(OEmbedOption);
         rootCommand.Add(AmazonCacheOption);
+        rootCommand.Add(WebpOption);
         rootCommand.Add(ConfigOption);
         rootCommand.Add(ScheduledCommand);
 

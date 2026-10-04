@@ -15,4 +15,5 @@ internal sealed record BuildOptions(
     string ThemePath,
     string? OEmbedCachePath,
     string? AmazonCachePath,
-    FileInfo? ConfigFile);
+    FileInfo? ConfigFile,
+    bool Webp = false);
